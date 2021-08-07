@@ -1,0 +1,10 @@
+[package]
+name = "brainfuck"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+clap = "2"
+thiserror = "1"
+exitcode = "1.1"
+colored = "2"
