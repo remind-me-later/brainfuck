@@ -1,7 +1,7 @@
 use crate::executable::Executable;
+use crate::position::Position;
 use std::convert::TryFrom;
 use std::fmt;
-use std::io::Read;
 use std::str;
 use thiserror::Error;
 
@@ -15,6 +15,16 @@ pub enum Instruction {
     Output,
     Open,
     Close,
+}
+
+impl Instruction {
+    pub fn is_open(self) -> bool {
+        self == Instruction::Open
+    }
+
+    pub fn is_close(self) -> bool {
+        self == Instruction::Close
+    }
 }
 
 impl fmt::Display for Instruction {
@@ -45,27 +55,23 @@ impl From<Instruction> for u8 {
 }
 
 #[derive(Error, Debug)]
-#[error("not a brainfuck instruction {character:?}")]
-pub struct InstructionTryFromError {
-    character: char,
-}
+#[error("not a brainfuck instruction")]
+pub struct InstructionTryFromError;
 
 impl TryFrom<char> for Instruction {
     type Error = InstructionTryFromError;
 
     fn try_from(character: char) -> Result<Self, Self::Error> {
         match character {
-            '<' => Ok(Instruction::Left),
-            '>' => Ok(Instruction::Right),
-            '-' => Ok(Instruction::Less),
-            '+' => Ok(Instruction::More),
-            ',' => Ok(Instruction::Input),
-            '.' => Ok(Instruction::Output),
-            '[' => Ok(Instruction::Open),
-            ']' => Ok(Instruction::Close),
-            _ => Err(InstructionTryFromError {
-                character: character,
-            }),
+            '<' => Ok(Self::Left),
+            '>' => Ok(Self::Right),
+            '-' => Ok(Self::Less),
+            '+' => Ok(Self::More),
+            ',' => Ok(Self::Input),
+            '.' => Ok(Self::Output),
+            '[' => Ok(Self::Open),
+            ']' => Ok(Self::Close),
+            _ => Err(InstructionTryFromError),
         }
     }
 }
@@ -74,12 +80,20 @@ impl TryFrom<u8> for Instruction {
     type Error = InstructionTryFromError;
 
     fn try_from(byte: u8) -> Result<Self, Self::Error> {
-        Instruction::try_from(byte as char)
+        Self::try_from(byte as char)
     }
 }
 
 pub struct Instructions {
     instructions_raw: Vec<Instruction>,
+}
+
+impl Instructions {
+    fn new(instructions_raw: Vec<Instruction>) -> Self {
+        Self {
+            instructions_raw: instructions_raw,
+        }
+    }
 }
 
 impl fmt::Display for Instructions {
@@ -96,16 +110,10 @@ impl fmt::Display for Instructions {
 
 #[derive(Error, Debug)]
 pub enum InstructionsParseError {
-    #[error("unbalanced \"[\" at line: {line_number:?}, character: {character_number:?}")]
-    MismatchedOpen {
-        line_number: usize,
-        character_number: usize,
-    },
-    #[error("unbalanced \"]\" at line: {line_number:?}, character: {character_number:?}")]
-    MismatchedClose {
-        line_number: usize,
-        character_number: usize,
-    },
+    #[error("unbalanced \"[\" at {}", .0)]
+    MismatchedOpen(Position),
+    #[error("unbalanced \"]\" at {}", .0)]
+    MismatchedClose(Position),
 }
 
 impl str::FromStr for Instructions {
@@ -118,15 +126,15 @@ impl str::FromStr for Instructions {
         for (line_number, line) in string.lines().enumerate() {
             for (character_number, character) in line.chars().enumerate() {
                 if let Ok(instruction) = Instruction::try_from(character) {
-                    if instruction == Instruction::Open {
-                        brackets.push((line_number + 1, character_number + 1));
-                    } else if instruction == Instruction::Close {
-                        brackets
-                            .pop()
-                            .ok_or_else(|| InstructionsParseError::MismatchedClose {
-                                line_number: line_number + 1,
-                                character_number: character_number + 1,
-                            })?;
+                    if instruction.is_open() {
+                        brackets.push(Position::new(line_number, character_number));
+                    } else if instruction.is_close() {
+                        brackets.pop().ok_or_else(|| {
+                            InstructionsParseError::MismatchedClose(Position::new(
+                                line_number,
+                                character_number,
+                            ))
+                        })?;
                     }
 
                     instructions_raw.push(instruction);
@@ -135,14 +143,9 @@ impl str::FromStr for Instructions {
         }
 
         if let Some(mismatched_left) = brackets.pop() {
-            Err(InstructionsParseError::MismatchedOpen {
-                line_number: mismatched_left.0,
-                character_number: mismatched_left.1,
-            })
+            Err(InstructionsParseError::MismatchedOpen(mismatched_left))
         } else {
-            Ok(Instructions {
-                instructions_raw: instructions_raw,
-            })
+            Ok(Instructions::new(instructions_raw))
         }
     }
 }
@@ -162,7 +165,7 @@ impl Executable for Instructions {
         while pc < len {
             match self.instructions_raw[pc] {
                 Instruction::Left => head = if head == 0 { 29_999 } else { head - 1 },
-                Instruction::Right => head = (head + 1).wrapping_rem(30_000),
+                Instruction::Right => head = if head == 29_999 { 0 } else { head + 1 },
                 Instruction::Less => tape[head] = tape[head].wrapping_sub(1),
                 Instruction::More => tape[head] = tape[head].wrapping_add(1),
                 Instruction::Input => {
@@ -180,10 +183,10 @@ impl Executable for Instructions {
                         let mut depth = 0;
                         pc += 1;
 
-                        while depth != 0 || self.instructions_raw[pc] != Instruction::Close {
-                            if self.instructions_raw[pc] == Instruction::Open {
+                        while depth != 0 || !self.instructions_raw[pc].is_close() {
+                            if self.instructions_raw[pc].is_open() {
                                 depth += 1;
-                            } else if self.instructions_raw[pc] == Instruction::Close {
+                            } else if self.instructions_raw[pc].is_close() {
                                 depth -= 1;
                             }
                             pc += 1;
@@ -196,10 +199,10 @@ impl Executable for Instructions {
                         let mut depth = 0;
                         pc -= 1;
 
-                        while depth != 0 || self.instructions_raw[pc] != Instruction::Open {
-                            if self.instructions_raw[pc] == Instruction::Open {
+                        while depth != 0 || !self.instructions_raw[pc].is_open() {
+                            if self.instructions_raw[pc].is_open() {
                                 depth += 1;
-                            } else if self.instructions_raw[pc] == Instruction::Close {
+                            } else if self.instructions_raw[pc].is_close() {
                                 depth -= 1;
                             }
                             pc -= 1;
@@ -216,21 +219,125 @@ impl Executable for Instructions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
 
     #[test]
     fn simple_hello() {
-        let program = "[ A simple \"Hello, World\" program that prints a newline at the end, only the first cell is manipulated to obtain the desired ASCII values. A loop at the beginning of a program will never be executed as the value of the first cell is 0, so you can write a comment using any character you like as long as the '[' and ']' are balanced.]++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++.+++++++++++++++++++++++++++++.+++++++..+++.-------------------------------------------------------------------.------------.+++++++++++++++++++++++++++++++++++++++++++++++++++++++.++++++++++++++++++++++++.+++.------.--------.-------------------------------------------------------------------.";
+        // Super simple hello world program should show any glaring errors
+        let program = "
+[
+  A simple \"Hello, World\" program that prints a newline at the end,
+  only the first cell is manipulated to obtain the desired ASCII values.
 
-        let mut file = Vec::new();
+  A loop at the beginning of a program will never be executed as the value
+  of the first cell is 0, so you can write a comment using any character you
+  like as long as the '[' and ']' are balanced.
+]
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++.   Add 72 which is ASCII for 'H' to Cell #0 and print it
++++++++++++++++++++++++++++++.                                              Add 30 to get to the value 101 for 'e'
++++++++.                                                                    Add 7 for 'l'
+.                                                                           Print for another 'l'
++++.                                                                        Add 3 for 'o'
+-------------------------------------------------------------------.        Subtract until 44 for comma
+------------.                                                               The same to get to 32 for Space
++++++++++++++++++++++++++++++++++++++++++++++++++++++++.                    Get to 87 for 'W'
+++++++++++++++++++++++++.                                                   111 for 'o'
++++.                                                                        114 for 'r'
+------.                                                                     108 for 'l'
+--------.                                                                   100 for 'd'
+-------------------------------------------------------------------.        10
+for '!'";
+
+        let mut output_file = Vec::with_capacity(13);
 
         program
             .parse::<Instructions>()
             .unwrap()
-            .execute(&mut file, &mut std::io::empty());
+            .execute(&mut output_file, &mut std::io::empty());
 
-        let mut out = Vec::new();
-        file.as_slice().read_to_end(&mut out).unwrap();
+        let mut out = Vec::with_capacity(13);
+        output_file.as_slice().read_to_end(&mut out).unwrap();
 
-        println!("{}", String::from_utf8(out).unwrap());
+        assert_eq!(String::from_utf8(out).unwrap(), "Hello, World!");
+    }
+
+    #[test]
+    fn number() {
+        // This program uses a lot of nested loops so it should be a good test
+        let program = "
+    >>>>+>+++>+++>>>>>+++[
+      >,+>++++[>++++<-]>[<<[-[->]]>[<]>-]<<[
+        >+>+>>+>+[<<<<]<+>>[+<]<[>]>+[[>>>]>>+[<<<<]>-]+<+>>>-[
+          <<+[>]>>+<<<+<+<--------[
+            <<-<<+[>]>+<<-<<-[
+              <<<+<-[>>]<-<-<<<-<----[
+                <<<->>>>+<-[
+                  <<<+[>]>+<<+<-<-[
+                    <<+<-<+[>>]<+<<<<+<-[
+                      <<-[>]>>-<<<-<-<-[
+                        <<<+<-[>>]<+<<<+<+<-[
+                          <<<<+[>]<-<<-[
+                            <<+[>]>>-<<<<-<-[
+                              >>>>>+<-<<<+<-[
+                                >>+<<-[
+                                  <<-<-[>]>+<<-<-<-[
+                                    <<+<+[>]<+<+<-[
+                                      >>-<-<-[
+                                        <<-[>]<+<++++[<-------->-]++<[
+                                          <<+[>]>>-<-<<<<-[
+                                            <<-<<->>>>-[
+                                              <<<<+[>]>+<<<<-[
+                                                <<+<<-[>>]<+<<<<<-[
+                                                  >>>>-<<<-<-
+      ]]]]]]]]]]]]]]]]]]]]]]>[>[[[<<<<]>+>>[>>>>>]<-]<]>>>+>>>>>>>+>]<
+    ]<[-]<<<<<<<++<+++<+++[
+      [>]>>>>>>++++++++[<<++++>++++++>-]<-<<[-[<+>>.<-]]<<<<[
+        -[-[>+<-]>]>>>>>[.[>]]<<[<+>-]>>>[<<++[<+>--]>>-]
+        <<[->+<[<++>-]]<<<[<+>-]<<<<
+      ]>>+>>>--[<+>---]<.>>[[-]<<]<
+    ]
+    [Enter a number using ()-./0123456789abcdef and space, and hit return.
+    Daniel B Cristofani (cristofdathevanetdotcom)
+    http://www.hevanet.com/cristofd/brainfuck/]
+    ";
+
+        let mut output_file = Vec::with_capacity(300);
+        let input_file = [
+            '1' as u8, '2' as u8, '3' as u8, '4' as u8, '5' as u8, '6' as u8, '7' as u8, '8' as u8,
+            '9' as u8, '\n' as u8,
+        ];
+
+        program
+            .parse::<Instructions>()
+            .unwrap()
+            .execute(&mut output_file, &mut &input_file[..]);
+
+        let mut out = Vec::with_capacity(300);
+        output_file.as_slice().read_to_end(&mut out).unwrap();
+
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "                /\\
+                \\/\\
+              /\\   
+              \\/\\
+            /\\ \\/
+              \\
+          /    
+          \\/\\
+        /  \\/
+        \\/\\
+       \\  /
+      \\/\\
+    /\\   
+     /\\
+  /\\  /
+   / 
+ \\ \\/
+  \\
+   
+"
+        );
     }
 }

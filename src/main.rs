@@ -1,11 +1,15 @@
 mod executable;
 mod instructions;
+mod lexemes;
+mod position;
 
 use clap::{crate_authors, crate_version, App, Arg};
 use colored::*;
 use executable::Executable;
 use instructions::Instructions;
+use lexemes::Lexemes;
 use std::fs;
+use std::io;
 use std::process;
 
 fn main() {
@@ -16,36 +20,75 @@ fn main() {
         .arg(
             Arg::with_name("INPUT")
                 .help("Program to interpret")
-                .required(true)
                 .index(1),
+        )
+        .arg(
+            Arg::with_name("naive")
+                .short("n")
+                .long("naive")
+                .help("Use a naive interpreter, use this if the default fails"),
         )
         .get_matches();
 
     let contents =
-        fs::read_to_string(matches.value_of("INPUT").unwrap()).exit_error(exitcode::NOINPUT);
+        fs::read_to_string(matches.value_of("INPUT").exit_on_no_file()).exit_on_bad_file();
 
-    contents
-        .parse::<Instructions>()
-        .exit_error(exitcode::DATAERR)
-        .execute(&mut std::io::stdout(), &mut std::io::stdin());
+    if matches.is_present("naive") {
+        contents
+            .parse::<Instructions>()
+            .exit_on_bad_program()
+            .execute(&mut io::stdout(), &mut io::stdin());
+    } else {
+        contents
+            .parse::<Lexemes>()
+            .exit_on_bad_program()
+            .execute(&mut io::stdout(), &mut io::stdin());
+    }
 
     process::exit(exitcode::OK);
 }
 
-trait ExitError<T, E> {
-    fn exit_error(self, exit_code: exitcode::ExitCode) -> T;
+pub trait OptionError<T> {
+    fn exit_on_no_file(self) -> T;
 }
 
-impl<T, E> ExitError<T, E> for std::result::Result<T, E>
+impl<T> OptionError<T> for Option<T> {
+    fn exit_on_no_file(self) -> T {
+        match self {
+            Some(val) => val,
+            None => {
+                println!("{} no input file", "fatal error:".red().bold());
+                process::exit(exitcode::NOINPUT);
+            }
+        }
+    }
+}
+
+trait ResultError<T> {
+    fn exit_on_bad_file(self) -> T;
+    fn exit_on_bad_program(self) -> T;
+}
+
+impl<T, E> ResultError<T> for Result<T, E>
 where
     E: std::error::Error,
 {
-    fn exit_error(self, exit_code: exitcode::ExitCode) -> T {
+    fn exit_on_bad_file(self) -> T {
         match self {
-            Ok(val) => return val,
+            Ok(val) => val,
             Err(error) => {
-                println!("{} {}", "error:".red().bold(), error);
-                process::exit(exit_code);
+                println!("{} {}", "fatal error:".red().bold(), error);
+                process::exit(exitcode::NOINPUT);
+            }
+        }
+    }
+
+    fn exit_on_bad_program(self) -> T {
+        match self {
+            Ok(val) => val,
+            Err(error) => {
+                println!("{} {}", "fatal error:".red().bold(), error);
+                process::exit(exitcode::DATAERR);
             }
         }
     }
