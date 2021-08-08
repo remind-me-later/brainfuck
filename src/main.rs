@@ -1,59 +1,40 @@
-mod executable;
-mod instructions;
-mod lexemes;
+mod less_naive_parser;
 mod position;
+mod virtual_machine;
 
-use clap::{crate_authors, crate_version, App, Arg};
+use clap::{App, Arg};
 use colored::*;
-use executable::Executable;
-use instructions::Instructions;
-use lexemes::Lexemes;
+use less_naive_parser::Parts;
 use std::fs;
 use std::io;
 use std::process;
+use virtual_machine::VM;
 
 fn main() {
     let matches = App::new("brainfuck")
-        .author(crate_authors!())
-        .version(crate_version!())
+        .author(clap::crate_authors!())
+        .version(clap::crate_version!())
         .about("A brainfuck interpreter written in Rust")
         .arg(
             Arg::with_name("INPUT")
                 .help("Program to interpret")
                 .index(1),
         )
-        .arg(
-            Arg::with_name("naive")
-                .short("n")
-                .long("naive")
-                .help("Use a naive interpreter, use this if the default fails"),
-        )
         .get_matches();
 
-    let contents =
-        fs::read_to_string(matches.value_of("INPUT").exit_on_no_file()).exit_on_bad_file();
+    let contents = fs::read_to_string(matches.value_of("INPUT").exit_no_file()).exit_bad_file();
 
-    if matches.is_present("naive") {
-        contents
-            .parse::<Instructions>()
-            .exit_on_bad_program()
-            .execute(&mut io::stdout(), &mut io::stdin());
-    } else {
-        contents
-            .parse::<Lexemes>()
-            .exit_on_bad_program()
-            .execute(&mut io::stdout(), &mut io::stdin());
-    }
+    VM::new(&contents.parse::<Parts>().exit_bad_program()).run(&mut io::stdout(), &mut io::stdin());
 
     process::exit(exitcode::OK);
 }
 
 pub trait OptionError<T> {
-    fn exit_on_no_file(self) -> T;
+    fn exit_no_file(self) -> T;
 }
 
 impl<T> OptionError<T> for Option<T> {
-    fn exit_on_no_file(self) -> T {
+    fn exit_no_file(self) -> T {
         match self {
             Some(val) => val,
             None => {
@@ -65,15 +46,15 @@ impl<T> OptionError<T> for Option<T> {
 }
 
 trait ResultError<T> {
-    fn exit_on_bad_file(self) -> T;
-    fn exit_on_bad_program(self) -> T;
+    fn exit_bad_file(self) -> T;
+    fn exit_bad_program(self) -> T;
 }
 
 impl<T, E> ResultError<T> for Result<T, E>
 where
     E: std::error::Error,
 {
-    fn exit_on_bad_file(self) -> T {
+    fn exit_bad_file(self) -> T {
         match self {
             Ok(val) => val,
             Err(error) => {
@@ -83,7 +64,7 @@ where
         }
     }
 
-    fn exit_on_bad_program(self) -> T {
+    fn exit_bad_program(self) -> T {
         match self {
             Ok(val) => val,
             Err(error) => {

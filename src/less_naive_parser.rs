@@ -1,11 +1,11 @@
-use crate::executable::Executable;
 use crate::position::Position;
+use crate::virtual_machine::{VMRegisters, VMRunnable};
 use std::convert::TryFrom;
 use std::fmt;
 use std::str;
 use thiserror::Error;
 
-pub enum Lexeme {
+pub enum Part {
     Shift(i32),
     Manipulate(i32),
     Input(i32),
@@ -14,7 +14,7 @@ pub enum Lexeme {
     Close(i32),
 }
 
-impl Lexeme {
+impl Part {
     pub fn collapse(&self, other: &Self) -> Option<Self> {
         match (self, other) {
             (Self::Shift(mine), Self::Shift(theirs)) => Some(Self::Shift(mine + theirs)),
@@ -122,41 +122,41 @@ impl Lexeme {
     }
 }
 
-impl fmt::Display for Lexeme {
+impl fmt::Display for Part {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let symbol = match self {
-            Lexeme::Shift(offset) => {
+            Self::Shift(offset) => {
                 if offset.is_positive() {
                     ">"
                 } else {
                     "<"
                 }
             }
-            Lexeme::Manipulate(ammount) => {
+            Self::Manipulate(ammount) => {
                 if ammount.is_positive() {
                     "+"
                 } else {
                     "-"
                 }
             }
-            Lexeme::Input(_) => ",",
-            Lexeme::Output(_) => ".",
-            Lexeme::Open(_) => "[",
-            Lexeme::Close(_) => "]",
+            Self::Input(_) => ",",
+            Self::Output(_) => ".",
+            Self::Open(_) => "[",
+            Self::Close(_) => "]",
         };
 
         let res = match self {
-            Lexeme::Shift(argument)
-            | Lexeme::Manipulate(argument)
-            | Lexeme::Input(argument)
-            | Lexeme::Output(argument) => {
+            Self::Shift(argument)
+            | Self::Manipulate(argument)
+            | Self::Input(argument)
+            | Self::Output(argument) => {
                 if argument.abs() == 1 {
                     symbol.to_string()
                 } else {
                     format!("{}{}", symbol, argument)
                 }
             }
-            Lexeme::Open(_) | Lexeme::Close(_) => symbol.to_string(),
+            Self::Open(_) | Self::Close(_) => symbol.to_string(),
         };
 
         write!(f, "{}", res)
@@ -164,11 +164,11 @@ impl fmt::Display for Lexeme {
 }
 
 #[derive(Error, Debug)]
-#[error("not a brainfuck lexeme")]
-pub struct LexemeTryFromError;
+#[error("not a brainfuck part")]
+pub struct PartTryFromError;
 
-impl TryFrom<char> for Lexeme {
-    type Error = LexemeTryFromError;
+impl TryFrom<char> for Part {
+    type Error = PartTryFromError;
 
     fn try_from(character: char) -> Result<Self, Self::Error> {
         match character {
@@ -180,29 +180,29 @@ impl TryFrom<char> for Lexeme {
             '.' => Ok(Self::Output(1)),
             '[' => Ok(Self::Open(1)),
             ']' => Ok(Self::Close(1)),
-            _ => Err(LexemeTryFromError),
+            _ => Err(PartTryFromError),
         }
     }
 }
 
-impl TryFrom<u8> for Lexeme {
-    type Error = LexemeTryFromError;
+impl TryFrom<u8> for Part {
+    type Error = PartTryFromError;
 
     fn try_from(byte: u8) -> Result<Self, Self::Error> {
         Self::try_from(byte as char)
     }
 }
 
-pub struct Lexemes {
-    lexemes_raw: Vec<Lexeme>,
+pub struct Parts {
+    parts_raw: Vec<Part>,
 }
 
-impl fmt::Display for Lexemes {
+impl fmt::Display for Parts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "{}",
-            self.lexemes_raw
+            self.parts_raw
                 .iter()
                 .fold(String::new(), |a, l| a + &l.to_string())
         )
@@ -224,50 +224,50 @@ impl JumpAndPosition {
 }
 
 #[derive(Error, Debug)]
-pub enum LexemesParseError {
+pub enum PartsParseError {
     #[error("unbalanced \"[\" at {}", .0)]
     MismatchedOpen(Position),
     #[error("unbalanced \"]\" at {}", .0)]
     MismatchedClose(Position),
 }
 
-impl str::FromStr for Lexemes {
-    type Err = LexemesParseError;
+impl str::FromStr for Parts {
+    type Err = PartsParseError;
 
     fn from_str(string: &str) -> Result<Self, Self::Err> {
-        let mut lexemes_raw = Vec::with_capacity(100);
+        let mut parts_raw = Vec::with_capacity(100);
         let mut brackets = Vec::with_capacity(20);
 
         for (line_number, line) in string.lines().enumerate() {
             for (character_number, character) in line.chars().enumerate() {
-                if let Ok(mut lexeme) = Lexeme::try_from(character) {
-                    if let Some(last) = lexemes_raw.last() {
+                if let Ok(mut lexeme) = Part::try_from(character) {
+                    if let Some(last) = parts_raw.last() {
                         if let Some(collapsed) = lexeme.collapse(last) {
-                            lexemes_raw.pop();
+                            parts_raw.pop();
                             if !collapsed.is_degenerate() {
-                                lexemes_raw.push(collapsed);
+                                parts_raw.push(collapsed);
                             }
                         } else {
                             if lexeme.is_open() {
                                 brackets.push(JumpAndPosition::new(
-                                    lexemes_raw.len(),
+                                    parts_raw.len(),
                                     Position::new(line_number, character_number),
                                 ));
                             } else if lexeme.is_close() {
                                 let open = brackets
                                     .pop()
                                     .ok_or_else(|| {
-                                        LexemesParseError::MismatchedClose(Position::new(
+                                        PartsParseError::MismatchedClose(Position::new(
                                             line_number,
                                             character_number,
                                         ))
                                     })?
                                     .jump_position;
-                                lexemes_raw[open] = Lexeme::Open(lexemes_raw.len() as i32);
-                                lexeme = Lexeme::Close(open as i32);
+                                parts_raw[open] = Part::Open(parts_raw.len() as i32);
+                                lexeme = Part::Close(open as i32);
                             }
 
-                            lexemes_raw.push(lexeme);
+                            parts_raw.push(lexeme);
                         }
                     } else {
                         if lexeme.is_open() {
@@ -276,74 +276,71 @@ impl str::FromStr for Lexemes {
                                 Position::new(line_number, character_number),
                             ));
                         } else if lexeme.is_close() {
-                            return Err(LexemesParseError::MismatchedClose(Position::new(
+                            return Err(PartsParseError::MismatchedClose(Position::new(
                                 line_number,
                                 character_number,
                             )));
                         }
 
-                        lexemes_raw.push(lexeme);
+                        parts_raw.push(lexeme);
                     }
                 }
             }
         }
         if let Some(mismatched) = brackets.pop() {
-            Err(LexemesParseError::MismatchedOpen(
-                mismatched.source_position,
-            ))
+            Err(PartsParseError::MismatchedOpen(mismatched.source_position))
         } else {
-            Ok(Lexemes {
-                lexemes_raw: lexemes_raw,
+            Ok(Parts {
+                parts_raw: parts_raw,
             })
         }
     }
 }
 
-impl Executable for Lexemes {
-    fn execute<R, W>(&self, write: &mut W, read: &mut R)
+impl VMRunnable for Parts {
+    fn run<R, W>(&self, registers: &mut VMRegisters, writer: &mut W, reader: &mut R)
     where
         R: std::io::Read,
         W: std::io::Write,
     {
-        // program counter
-        let mut pc = 0;
-        let mut head: usize = 0;
-        let mut tape: [u8; 30_000] = [0; 30_000];
-        let len = self.lexemes_raw.len();
+        let len = self.parts_raw.len();
 
-        while pc < len {
-            match self.lexemes_raw[pc] {
-                Lexeme::Shift(offset) => head = (head as i32 + offset).rem_euclid(30_000) as usize,
-                Lexeme::Manipulate(ammount) => {
-                    tape[head] = tape[head].wrapping_add(ammount.wrapping_rem(256) as u8)
+        while registers.pc() < len {
+            match self.parts_raw[registers.pc()] {
+                Part::Shift(offset) => registers
+                    .head_to((registers.head() as i32 + offset).rem_euclid(30_000) as usize),
+                Part::Manipulate(ammount) => {
+                    *registers.cell_mut() = registers
+                        .cell()
+                        .wrapping_add(ammount.wrapping_rem(256) as u8)
                 }
-                Lexeme::Input(times) => {
+                Part::Input(times) => {
                     for _ in 0..times {
                         let mut buffer = [0; 1];
-                        read.read_exact(&mut buffer).unwrap();
-                        tape[head] = buffer[0];
+                        reader.read_exact(&mut buffer).unwrap();
+                        *registers.cell_mut() = buffer[0];
                     }
                 }
-                Lexeme::Output(times) => {
+                Part::Output(times) => {
                     for _ in 0..times {
                         let mut buffer = [0; 1];
-                        buffer[0] = tape[head];
-                        write.write(&mut buffer).unwrap();
+                        buffer[0] = registers.cell();
+                        writer.write(&mut buffer).unwrap();
                     }
                 }
-                Lexeme::Open(close) => {
-                    if tape[head] == 0 {
-                        pc = close as usize - 1;
+                Part::Open(close) => {
+                    if registers.cell() == 0 {
+                        registers.jump_to(close as usize - 1);
                     }
                 }
-                Lexeme::Close(open) => {
-                    if tape[head] != 0 {
-                        pc = open as usize;
+                Part::Close(open) => {
+                    if registers.cell() != 0 {
+                        registers.jump_to(open as usize);
                     }
                 }
             }
 
-            pc += 1;
+            registers.increase_pc();
         }
     }
 }
