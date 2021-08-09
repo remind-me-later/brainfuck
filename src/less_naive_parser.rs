@@ -1,4 +1,4 @@
-use crate::position::Position;
+use crate::string_utils::LineChar;
 use crate::virtual_machine::{VMRegisters, VMRunnable};
 use std::convert::TryFrom;
 use std::fmt;
@@ -14,17 +14,41 @@ pub enum Part {
     Close(i32),
 }
 
+
+
+#[derive(Error, Debug)]
+enum PartFromIterError {
+    #[error("not a brainfuck part")]
+    NotAPart,
+    #[error("consumed all of the iterator")]
+    EndOfIterator,
+}
+
 impl Part {
-    pub fn collapse(&self, other: &Self) -> Option<Self> {
-        match (self, other) {
-            (Self::Shift(mine), Self::Shift(theirs)) => Some(Self::Shift(mine + theirs)),
-            (Self::Manipulate(mine), Self::Manipulate(theirs)) => {
-                Some(Self::Manipulate(mine + theirs))
+    fn from_iter<I>(iter: &mut std::iter::Peekable<I>) -> Result<(usize, Self), PartFromIterError>
+    where
+        I: std::iter::Iterator<Item = (usize, char)>,
+    {
+        let (index, part_character) = iter.next().ok_or(PartFromIterError::EndOfIterator)?;
+        let mut part = Part::try_from(part_character).map_err(|_| PartFromIterError::NotAPart)?;
+
+        while let Some(character) = iter.peek().map(|(_, c)| c) {
+            if let Ok(next_part) = Part::try_from(character) {
+                part = match (&part, next_part) {
+                    (Self::Shift(l), Self::Shift(r)) => Self::Shift(l + r),
+                    (Self::Manipulate(l), Self::Manipulate(r)) => Self::Manipulate(l + r),
+                    (Self::Input(l), Self::Input(r)) => Self::Input(l + r),
+                    (Self::Output(l), Self::Output(r)) => Self::Output(l + r),
+                    _ => return Ok((index, part)),
+                }
+            } else {
+                return Ok((index, part));
             }
-            (Self::Input(mine), Self::Input(theirs)) => Some(Self::Input(mine + theirs)),
-            (Self::Output(mine), Self::Output(theirs)) => Some(Self::Output(mine + theirs)),
-            _ => None,
+
+            iter.next();
         }
+
+        return Ok((index, part));
     }
 
     pub fn is_degenerate(&self) -> bool {
@@ -40,6 +64,7 @@ impl Part {
         *value == 0
     }
 
+    #[allow(dead_code)]
     pub fn is_shift(&self) -> bool {
         match self {
             Self::Shift(_) => true,
@@ -47,6 +72,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_left(&self) -> bool {
         match self {
             Self::Shift(offset) => offset.is_negative(),
@@ -54,6 +80,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_right(&self) -> bool {
         match self {
             Self::Shift(offset) => offset.is_positive(),
@@ -61,6 +88,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_manipulate(&self) -> bool {
         match self {
             Self::Manipulate(_) => true,
@@ -68,6 +96,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_less(&self) -> bool {
         match self {
             Self::Manipulate(ammount) => ammount.is_negative(),
@@ -75,6 +104,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_more(&self) -> bool {
         match self {
             Self::Manipulate(ammount) => ammount.is_positive(),
@@ -82,6 +112,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_in(&self) -> bool {
         match self {
             Self::Input(_) => true,
@@ -89,6 +120,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_out(&self) -> bool {
         match self {
             Self::Output(_) => true,
@@ -110,6 +142,7 @@ impl Part {
         }
     }
 
+    #[allow(dead_code)]
     pub fn argument(&self) -> i32 {
         *match self {
             Self::Shift(offset) => offset,
@@ -185,6 +218,14 @@ impl TryFrom<char> for Part {
     }
 }
 
+impl TryFrom<&char> for Part {
+    type Error = PartTryFromError;
+
+    fn try_from(character: &char) -> Result<Self, Self::Error> {
+        Self::try_from(character.clone())
+    }
+}
+
 impl TryFrom<u8> for Part {
     type Error = PartTryFromError;
 
@@ -193,14 +234,22 @@ impl TryFrom<u8> for Part {
     }
 }
 
+impl TryFrom<&u8> for Part {
+    type Error = PartTryFromError;
+
+    fn try_from(byte: &u8) -> Result<Self, Self::Error> {
+        Self::try_from(byte.clone())
+    }
+}
+
 pub struct Parts {
     parts_raw: Vec<Part>,
 }
 
 impl fmt::Display for Parts {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
-            f,
+            formatter,
             "{}",
             self.parts_raw
                 .iter()
@@ -209,16 +258,16 @@ impl fmt::Display for Parts {
     }
 }
 
-pub struct JumpAndPosition {
+pub struct JumpAndLineChar {
     jump_position: usize,
-    source_position: Position,
+    line_char: LineChar,
 }
 
-impl JumpAndPosition {
-    pub fn new(jump_position: usize, source_position: Position) -> Self {
+impl JumpAndLineChar {
+    pub fn new(jump_position: usize, line_char: LineChar) -> Self {
         Self {
             jump_position: jump_position,
-            source_position: source_position,
+            line_char: line_char,
         }
     }
 }
@@ -226,9 +275,9 @@ impl JumpAndPosition {
 #[derive(Error, Debug)]
 pub enum PartsParseError {
     #[error("unbalanced \"[\" at {}", .0)]
-    MismatchedOpen(Position),
+    MismatchedOpen(LineChar),
     #[error("unbalanced \"]\" at {}", .0)]
-    MismatchedClose(Position),
+    MismatchedClose(LineChar),
 }
 
 impl str::FromStr for Parts {
@@ -238,57 +287,40 @@ impl str::FromStr for Parts {
         let mut parts_raw = Vec::with_capacity(100);
         let mut brackets = Vec::with_capacity(20);
 
-        for (line_number, line) in string.lines().enumerate() {
-            for (character_number, character) in line.chars().enumerate() {
-                if let Ok(mut lexeme) = Part::try_from(character) {
-                    if let Some(last) = parts_raw.last() {
-                        if let Some(collapsed) = lexeme.collapse(last) {
-                            parts_raw.pop();
-                            if !collapsed.is_degenerate() {
-                                parts_raw.push(collapsed);
-                            }
-                        } else {
-                            if lexeme.is_open() {
-                                brackets.push(JumpAndPosition::new(
-                                    parts_raw.len(),
-                                    Position::new(line_number, character_number),
-                                ));
-                            } else if lexeme.is_close() {
-                                let open = brackets
-                                    .pop()
-                                    .ok_or_else(|| {
-                                        PartsParseError::MismatchedClose(Position::new(
-                                            line_number,
-                                            character_number,
-                                        ))
-                                    })?
-                                    .jump_position;
-                                parts_raw[open] = Part::Open(parts_raw.len() as i32);
-                                lexeme = Part::Close(open as i32);
-                            }
-
-                            parts_raw.push(lexeme);
-                        }
-                    } else {
-                        if lexeme.is_open() {
-                            brackets.push(JumpAndPosition::new(
-                                0,
-                                Position::new(line_number, character_number),
+        for (line_i, line) in string.lines().enumerate() {
+            let mut char_iter = line.char_indices().peekable();
+            loop {
+                match Part::from_iter(&mut char_iter) {
+                    Ok((index, part)) => {
+                        if part.is_open() {
+                            brackets.push(JumpAndLineChar::new(
+                                parts_raw.len(),
+                                LineChar::new(line_i, index),
                             ));
-                        } else if lexeme.is_close() {
-                            return Err(PartsParseError::MismatchedClose(Position::new(
-                                line_number,
-                                character_number,
-                            )));
+                            parts_raw.push(part);
+                        } else if part.is_close() {
+                            let open = brackets
+                                .pop()
+                                .ok_or_else(|| {
+                                    PartsParseError::MismatchedClose(LineChar::new(line_i, index))
+                                })?
+                                .jump_position;
+                            parts_raw[open] = Part::Open(parts_raw.len() as i32);
+                            parts_raw.push(Part::Close(open as i32));
+                        } else if !part.is_degenerate() {
+                            parts_raw.push(part);
                         }
-
-                        parts_raw.push(lexeme);
                     }
+                    Err(e) => match e {
+                        PartFromIterError::NotAPart => (),
+                        PartFromIterError::EndOfIterator => break,
+                    },
                 }
             }
         }
+
         if let Some(mismatched) = brackets.pop() {
-            Err(PartsParseError::MismatchedOpen(mismatched.source_position))
+            Err(PartsParseError::MismatchedOpen(mismatched.line_char))
         } else {
             Ok(Parts {
                 parts_raw: parts_raw,

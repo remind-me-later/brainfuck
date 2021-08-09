@@ -1,5 +1,5 @@
 mod less_naive_parser;
-mod position;
+mod string_utils;
 mod virtual_machine;
 
 use clap::{App, Arg};
@@ -24,6 +24,7 @@ fn main() {
 
     let contents = fs::read_to_string(matches.value_of("INPUT").exit_no_file()).exit_bad_file();
 
+    //println!("{}", contents.parse::<Parts>().exit_bad_program());
     VM::new(&contents.parse::<Parts>().exit_bad_program()).run(&mut io::stdout(), &mut io::stdin());
 
     process::exit(exitcode::OK);
