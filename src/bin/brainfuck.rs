@@ -1,14 +1,10 @@
-mod parser;
-mod string_utils;
-mod virtual_machine;
-
+use brainfuck::parser::Expressions;
+use brainfuck::virtual_machine::VM;
 use clap::{App, Arg};
 use colored::*;
-use parser::Expressions;
 use std::fs;
 use std::io;
 use std::process;
-use virtual_machine::VM;
 
 fn main() {
     let matches = App::new("brainfuck")
