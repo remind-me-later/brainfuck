@@ -42,11 +42,11 @@ pub struct CharPositionEnumerate<'a> {
     position: CharPosition,
 }
 
-// TODO: try_from
-impl<'a> CharPositionEnumerate<'a> {
-    pub fn from(input: &'a str) -> CharPositionEnumerate<'a> {
+impl<'a> From<&'a str> for CharPositionEnumerate<'a> {
+    fn from(input: &'a str) -> Self {
         let mut lines = input.lines();
         let chars = lines.next().unwrap().chars();
+
         CharPositionEnumerate {
             lines: lines,
             chars: chars,
