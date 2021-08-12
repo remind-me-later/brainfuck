@@ -1,142 +1,109 @@
-use std::convert::TryFrom;
 use std::fmt;
 use std::iter;
 use std::str;
-
-use thiserror::Error;
 
 use crate::ir_instruction::IRInstruction;
 use crate::parser_error::ParserError;
 use crate::parser_warning::ParserWarning;
 use crate::some_from::SomeFrom;
-use crate::string_utils::{CharPosition, CharPositionEnumerate};
 
-#[derive(Debug)]
-struct IRInstructionWithContext {
-    expression: IRInstruction,
-    beginning: CharPosition,
-    end: CharPosition,
+struct IRInstructionWithIndex {
+    instruction: IRInstruction,
+    beginning: usize,
+    end: usize,
 }
 
-#[derive(Error, Debug)]
-enum IRInstructionWithContextFromIterError {
-    #[error("not a brainfuck expression")]
-    NotAnIRInstruction,
-    #[error("the expression beginning at {} and ending at {} 
-            evaluates to the null operation", .0.beginning, .0.end)]
-    DegenerateIRInstruction(IRInstructionWithContext),
-    #[error("consumed all of the iterator")]
-    EndOfIterator,
-}
-
-impl IRInstructionWithContext {
-    fn new(expression: IRInstruction, beginning: CharPosition, end: CharPosition) -> Self {
+impl IRInstructionWithIndex {
+    fn new(instruction: IRInstruction, beginning: usize, end: usize) -> Self {
         Self {
-            expression: expression,
+            instruction: instruction,
             beginning: beginning,
             end: end,
         }
     }
 }
 
-impl<I> TryFrom<&mut iter::Peekable<I>> for IRInstructionWithContext
+impl<I> SomeFrom<&mut iter::Peekable<I>> for IRInstructionWithIndex
 where
-    I: iter::Iterator<Item = (CharPosition, char)>,
+    I: iter::Iterator<Item = (usize, char)>,
 {
-    type Error = IRInstructionWithContextFromIterError;
+    fn some_from(iter: &mut iter::Peekable<I>) -> Option<Self> {
+        while let Some((beginning, c)) = iter.next() {
+            if let Some(mut instruction) = IRInstruction::some_from(c) {
+                let mut end = beginning.clone();
 
-    fn try_from(iter: &mut iter::Peekable<I>) -> Result<Self, Self::Error> {
-        let (beginning, first_character) = iter.next().ok_or(Self::Error::EndOfIterator)?;
+                while let Some(next_instruction) = iter
+                    .peek()
+                    .map(|(_, c)| IRInstruction::some_from(c))
+                    .flatten()
+                    .map(|e| instruction.combine(&e))
+                    .flatten()
+                {
+                    instruction = next_instruction;
+                    end = iter.next().unwrap().0;
+                }
 
-        let mut expression =
-            IRInstruction::some_from(first_character).ok_or(Self::Error::NotAnIRInstruction)?;
-        let mut end = beginning.clone();
-
-        while let Some(next_expression) = iter
-            .peek()
-            .map(|(_, c)| IRInstruction::some_from(c))
-            .flatten()
-            .map(|e| expression.combine(&e))
-            .flatten()
-        {
-            end = iter.next().unwrap().0;
-
-            if next_expression.is_degenerate() {
-                return Err(Self::Error::DegenerateIRInstruction(Self::new(
-                    next_expression,
-                    beginning,
-                    end,
-                )));
+                return Some(Self::new(instruction, beginning, end));
             }
-
-            expression = next_expression;
         }
 
-        return Ok(Self::new(expression, beginning, end));
+        return None;
     }
 }
 
 pub struct Parser {
-    expressions_raw: Vec<IRInstruction>,
+    program: Vec<IRInstruction>,
     warnings: Vec<ParserWarning>,
 }
 
 impl Default for Parser {
     fn default() -> Self {
         Self {
-            expressions_raw: Vec::with_capacity(100),
+            program: Vec::with_capacity(100),
             warnings: Vec::with_capacity(10),
         }
     }
 }
+
 impl Parser {
     pub fn parse(&mut self, string: &str) -> Result<(), ParserError> {
         let mut brackets = Vec::with_capacity(20);
-        let mut positions = CharPositionEnumerate::from(string).peekable();
+        let mut indexs = string.char_indices().peekable();
 
-        loop {
-            match IRInstructionWithContext::try_from(&mut positions) {
-                Ok(expression_with_context) => {
-                    let mut expression = expression_with_context.expression;
-                    let position = expression_with_context.beginning;
+        while let Some(instruction_with_context) = IRInstructionWithIndex::some_from(&mut indexs) {
+            let mut instruction = instruction_with_context.instruction;
+            let beginning = instruction_with_context.beginning;
+            let end = instruction_with_context.end;
 
-                    if expression.is_open() {
-                        brackets.push(JumpAndCharPosition::new(
-                            self.expressions_raw.len(),
-                            position,
-                        ));
-                    } else if expression.is_close() {
-                        let open = brackets
-                            .pop()
-                            .ok_or_else(|| ParserError::MismatchedClose(position))?
-                            .jump_to;
+            if instruction.is_open() {
+                brackets.push(JumpAndCharPosition::new(self.program.len(), beginning));
+            } else if instruction.is_close() {
+                let open = brackets
+                    .pop()
+                    .ok_or_else(|| ParserError::MismatchedClose(beginning))?
+                    .jump_index;
 
-                        let close = self.expressions_raw.len();
+                let close = self.program.len();
 
-                        self.expressions_raw[open].modify_argument(|_| close);
-                        expression.modify_argument(|_| open);
-                    } else if expression.is_left() || expression.is_right() {
-                        expression.modify_argument(|a| a % 30_000);
-                    } else if expression.is_add() || expression.is_sub() {
-                        expression.modify_argument(|a| a % 256);
-                    }
-
-                    self.expressions_raw.push(expression);
-                }
-
-                Err(e) => match e {
-                    IRInstructionWithContextFromIterError::NotAnIRInstruction => {}
-                    IRInstructionWithContextFromIterError::DegenerateIRInstruction(e) => {
-                        self.warnings
-                            .push(ParserWarning::UselessExpression(e.beginning, e.end));
-                    }
-                    IRInstructionWithContextFromIterError::EndOfIterator => break,
-                },
+                self.program[open].modify_argument(|_| close);
+                instruction.modify_argument(|_| open);
+            } else if instruction.is_left() || instruction.is_right() {
+                instruction.modify_argument(|a| a % 30_000);
+            } else if instruction.is_add() || instruction.is_sub() {
+                instruction.modify_argument(|a| a % 256);
+            } else if instruction.is_nop() {
+                self.warnings.push(ParserWarning::NOP(
+                    beginning,
+                    end,
+                    String::from(&string[beginning..=end]),
+                ));
             }
+
+            self.program.push(instruction);
         }
 
         if let Some(mismatched) = brackets.pop() {
-            Err(ParserError::MismatchedOpen(mismatched.position))
+            Err(ParserError::MismatchedOpen(mismatched.index))
         } else {
             Ok(())
         }
@@ -145,14 +112,18 @@ impl Parser {
     pub fn warnings(&self) -> &Vec<ParserWarning> {
         &self.warnings
     }
+
+    pub fn ir_program(&self) -> &Vec<IRInstruction> {
+        &self.program
+    }
 }
 
 impl fmt::Debug for Parser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result = String::new();
 
-        for expression in &self.expressions_raw {
-            result = format!("{}{:?}\n", result, expression)
+        for instruction in &self.program {
+            result = format!("{}{:?}\n", result, instruction)
         }
 
         write!(f, "{}", result)
@@ -164,7 +135,7 @@ impl fmt::Display for Parser {
         write!(
             f,
             "{}",
-            self.expressions_raw
+            self.program
                 .iter()
                 .fold(String::new(), |a, l| a + &l.to_string())
         )
@@ -172,16 +143,15 @@ impl fmt::Display for Parser {
 }
 
 struct JumpAndCharPosition {
-    jump_to: usize,
-    position: CharPosition,
+    jump_index: usize,
+    index: usize,
 }
 
 impl JumpAndCharPosition {
-    pub fn new(jump_to: usize, position: CharPosition) -> Self {
+    pub fn new(jump_index: usize, index: usize) -> Self {
         Self {
-            jump_to: jump_to,
-            position: position,
+            jump_index: jump_index,
+            index: index,
         }
     }
 }
-

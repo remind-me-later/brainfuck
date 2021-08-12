@@ -20,6 +20,7 @@ impl IRInstruction {
         F: FnOnce(usize) -> usize,
     {
         match self {
+            Self::NOP => (),
             Self::Left(a)
             | Self::Right(a)
             | Self::Add(a)
@@ -31,28 +32,50 @@ impl IRInstruction {
         }
     }
 
-    pub fn combine(&self, other: &Self) -> Option<Self> {
-        match (self, other) {
-            (Self::Left(a), Self::Left(b)) => Some(Self::Left(a + b)),
-            (Self::Right(a), Self::Right(b)) => Some(Self::Right(a + b)),
-            (Self::Left(l), Self::Right(r)) | (Self::Right(r), Self::Left(l)) => Some(if r > l {
-                Self::Right(r - l)
-            } else {
-                Self::Left(l - r)
-            }),
-
-            (Self::Add(a), Self::Add(b)) => Some(Self::Add(a + b)),
-            (Self::Sub(a), Self::Sub(b)) => Some(Self::Sub(a + b)),
-            (Self::Add(a), Self::Sub(s)) | (Self::Sub(s), Self::Add(a)) => Some(if a > s {
-                Self::Add(a - s)
-            } else {
-                Self::Sub(s - a)
-            }),
-
-            (Self::Input(a), Self::Input(b)) => Some(Self::Input(a + b)),
-            (Self::Output(a), Self::Output(b)) => Some(Self::Output(a + b)),
-            _ => None,
+    fn is_degenerate(&self) -> bool {
+        match self {
+            Self::Left(a)
+            | Self::Right(a)
+            | Self::Add(a)
+            | Self::Sub(a)
+            | Self::Input(a)
+            | Self::Output(a) => *a == 0,
+            _ => false,
         }
+    }
+
+    pub fn combine(&self, other: &Self) -> Option<Self> {
+        let new_instruction = match (self, other) {
+            (Self::Left(a), Self::Left(b)) => Self::Left(a + b),
+            (Self::Right(a), Self::Right(b)) => Self::Right(a + b),
+            (Self::Left(l), Self::Right(r)) | (Self::Right(r), Self::Left(l)) => {
+                if r > l {
+                    Self::Right(r - l)
+                } else {
+                    Self::Left(l - r)
+                }
+            }
+
+            (Self::Add(a), Self::Add(b)) => Self::Add(a + b),
+            (Self::Sub(a), Self::Sub(b)) => Self::Sub(a + b),
+            (Self::Add(a), Self::Sub(s)) | (Self::Sub(s), Self::Add(a)) => {
+                if a > s {
+                    Self::Add(a - s)
+                } else {
+                    Self::Sub(s - a)
+                }
+            }
+
+            (Self::Input(a), Self::Input(b)) => Self::Input(a + b),
+            (Self::Output(a), Self::Output(b)) => Self::Output(a + b),
+            _ => return None,
+        };
+
+        Some(if new_instruction.is_degenerate() {
+            Self::NOP
+        } else {
+            new_instruction
+        })
     }
 
     #[allow(dead_code)]
@@ -72,6 +95,7 @@ impl IRInstruction {
 
     pub fn argument(&self) -> usize {
         match self {
+            Self::NOP => 0,
             Self::Left(a)
             | Self::Right(a)
             | Self::Add(a)
@@ -79,18 +103,13 @@ impl IRInstruction {
             | Self::Input(a)
             | Self::Output(a)
             | Self::Open(a)
-            | Self::Close(a) => a.clone(),
+            | Self::Close(a) => *a,
         }
     }
 
-    pub fn is_degenerate(&self) -> bool {
+    pub fn is_nop(&self) -> bool {
         match self {
-            Self::Left(a)
-            | Self::Right(a)
-            | Self::Add(a)
-            | Self::Sub(a)
-            | Self::Input(a)
-            | Self::Output(a) => a.clone() == 0,
+            Self::NOP => true,
             _ => false,
         }
     }
@@ -141,6 +160,7 @@ impl IRInstruction {
 impl fmt::Debug for IRInstruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::NOP => write!(f, "NOP"),
             Self::Left(a) => write!(f, "Left({})", a),
             Self::Right(a) => write!(f, "Right({})", a),
             Self::Add(a) => write!(f, "Add({})", a),
@@ -155,24 +175,17 @@ impl fmt::Debug for IRInstruction {
 
 impl fmt::Display for IRInstruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let symbol = match self {
-            Self::Left(_) => "<",
-            Self::Right(_) => ">",
-            Self::Add(_) => "+",
-            Self::Sub(_) => "-",
-            Self::Input(_) => ",",
-            Self::Output(_) => ".",
-            Self::Open(_) => "[",
-            Self::Close(_) => "]",
-        };
-
-        let mut res = String::new();
-
-        for _ in 0..self.argument() {
-            res += symbol;
+        match self {
+            Self::NOP => write!(f, " "),
+            Self::Left(a) => write!(f, "{}", "<".repeat(*a)),
+            Self::Right(a) => write!(f, "{}", ">".repeat(*a)),
+            Self::Add(a) => write!(f, "{}", "+".repeat(*a)),
+            Self::Sub(a) => write!(f, "{}", "-".repeat(*a)),
+            Self::Input(a) => write!(f, "{}", ",".repeat(*a)),
+            Self::Output(a) => write!(f, "{}", ",".repeat(*a)),
+            Self::Open(_) => write!(f, "["),
+            Self::Close(_) => write!(f, "]"),
         }
-
-        write!(f, "{}", res)
     }
 }
 
@@ -194,7 +207,7 @@ impl SomeFrom<char> for IRInstruction {
 
 impl SomeFrom<&char> for IRInstruction {
     fn some_from(c: &char) -> Option<Self> {
-        Self::some_from(c.clone())
+        Self::some_from(*c)
     }
 }
 
@@ -206,6 +219,6 @@ impl SomeFrom<u8> for IRInstruction {
 
 impl SomeFrom<&u8> for IRInstruction {
     fn some_from(b: &u8) -> Option<Self> {
-        Self::some_from(b.clone())
+        Self::some_from(*b)
     }
 }

@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::expression::Expression;
+use crate::ir_instruction::IRInstruction;
 
 const TAPE_LENGTH: usize = 30_000;
 
@@ -8,7 +8,7 @@ pub struct VM<'a> {
     pc: usize,
     head: usize,
     tape: [u8; TAPE_LENGTH],
-    ir_program: &'a Vec<Expression>,
+    program: &'a Vec<IRInstruction>,
 }
 
 impl<'a> VM<'a> {
@@ -32,30 +32,29 @@ impl<'a> VM<'a> {
         self.pc += 1
     }
 
-    pub fn ir_instruction(&self) -> Expression {
-        self.ir_program[self.pc]
-    }
     pub fn done(&self) -> bool {
-        self.pc >= self.ir_program.len()
+        self.pc >= self.program.len()
     }
 
-    pub fn new(ir_program: &'a Vec<Expression>) -> Self {
+    pub fn new(program: &'a Vec<IRInstruction>) -> Self {
         Self {
             pc: 0,
             head: 0,
             tape: [0; TAPE_LENGTH],
-            ir_program: ir_program,
+            program: program,
         }
     }
 
-    fn run<R, W>(&self, writer: &mut W, reader: &mut R)
+    pub fn run<R, W>(&mut self, writer: &mut W, reader: &mut R)
     where
         R: io::Read,
         W: io::Write,
     {
         while !self.done() {
-            match self.ir_instruction() {
-                Expression::Left(a) => {
+            match self.program[self.pc] {
+                IRInstruction::NOP => (),
+
+                IRInstruction::Left(a) => {
                     if a > self.head {
                         self.head_to(30_000 - (a - self.head))
                     } else {
@@ -63,13 +62,13 @@ impl<'a> VM<'a> {
                     }
                 }
 
-                Expression::Right(a) => self.head_to((self.head + a) % 30_000),
+                IRInstruction::Right(a) => self.head_to((self.head + a) % 30_000),
 
-                Expression::Add(a) => *self.cell_mut() = self.cell().wrapping_add(a as u8),
+                IRInstruction::Add(a) => *self.cell_mut() = self.cell().wrapping_add(a as u8),
 
-                Expression::Sub(a) => *self.cell_mut() = self.cell().wrapping_sub(a as u8),
+                IRInstruction::Sub(a) => *self.cell_mut() = self.cell().wrapping_sub(a as u8),
 
-                Expression::Input(times) => {
+                IRInstruction::Input(times) => {
                     for _ in 0..times {
                         writer.flush().unwrap();
                         let mut buffer = [0; 1];
@@ -78,7 +77,7 @@ impl<'a> VM<'a> {
                     }
                 }
 
-                Expression::Output(times) => {
+                IRInstruction::Output(times) => {
                     for _ in 0..times {
                         let mut buffer = [0; 1];
                         buffer[0] = self.cell();
@@ -86,13 +85,13 @@ impl<'a> VM<'a> {
                     }
                 }
 
-                Expression::Open(close) => {
+                IRInstruction::Open(close) => {
                     if self.cell() == 0 {
                         self.jump_to(close as usize - 1);
                     }
                 }
 
-                Expression::Close(open) => {
+                IRInstruction::Close(open) => {
                     if self.cell() != 0 {
                         self.jump_to(open as usize);
                     }

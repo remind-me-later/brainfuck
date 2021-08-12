@@ -1,7 +1,9 @@
 use brainfuck::parser::Parser;
 use brainfuck::virtual_machine::VM;
+
 use clap::{App, Arg};
 use colored::*;
+
 use std::fs;
 use std::io;
 use std::process;
@@ -18,17 +20,36 @@ fn main() {
         )
         .get_matches();
 
-    let contents = fs::read_to_string(matches.value_of("INPUT").exit_no_file()).exit_bad_file();
+    let file_name = matches.value_of("INPUT").exit_no_file();
+    let contents = fs::read_to_string(file_name).exit_bad_file();
 
     let mut parser = Parser::default();
 
     parser.parse(&contents).exit_bad_program();
 
     for warning in parser.warnings() {
-        println!("{} {}", "warning:".yellow().bold(), warning);
+        println!(
+            "{} {}",
+            "warning:".yellow().bold(),
+            warning.to_string().bold()
+        );
+        println!(
+            " {} {}:{}",
+            "-->".blue().bold(),
+            file_name,
+            warning.beginning()
+        );
+        println!("  {}", "|".blue().bold(),);
+        println!(
+            "{} {} {}",
+            warning.beginning().to_string().blue().bold(), // line number
+            "|".blue().bold(),
+            warning.line()
+        );
+        println!("  {}", "|".blue().bold(),);
     }
 
-    VM::new(&parser).run(&mut io::stdout(), &mut io::stdin());
+    //VM::new(parser.ir_program()).run(&mut io::stdout(), &mut io::stdin());
 
     process::exit(exitcode::OK);
 }
