@@ -1,7 +1,9 @@
-use std::convert;
 use std::fmt;
 
-pub enum Expression {
+use crate::some_from::SomeFrom;
+
+pub enum IRInstruction {
+    NOP,
     Left(usize),
     Right(usize),
     Add(usize),
@@ -12,7 +14,7 @@ pub enum Expression {
     Close(usize),
 }
 
-impl Expression {
+impl IRInstruction {
     pub fn modify_argument<F>(&mut self, f: F)
     where
         F: FnOnce(usize) -> usize,
@@ -136,7 +138,7 @@ impl Expression {
     }
 }
 
-impl fmt::Debug for Expression {
+impl fmt::Debug for IRInstruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Left(a) => write!(f, "Left({})", a),
@@ -151,7 +153,7 @@ impl fmt::Debug for Expression {
     }
 }
 
-impl fmt::Display for Expression {
+impl fmt::Display for IRInstruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let symbol = match self {
             Self::Left(_) => "<",
@@ -174,44 +176,36 @@ impl fmt::Display for Expression {
     }
 }
 
-impl convert::TryFrom<char> for Expression {
-    type Error = ();
-
-    fn try_from(c: char) -> Result<Self, Self::Error> {
+impl SomeFrom<char> for IRInstruction {
+    fn some_from(c: char) -> Option<Self> {
         match c {
-            '<' => Ok(Self::Left(1)),
-            '>' => Ok(Self::Right(1)),
-            '+' => Ok(Self::Add(1)),
-            '-' => Ok(Self::Sub(1)),
-            ',' => Ok(Self::Input(1)),
-            '.' => Ok(Self::Output(1)),
-            '[' => Ok(Self::Open(1)),
-            ']' => Ok(Self::Close(1)),
-            _ => Err(()),
+            '<' => Some(Self::Left(1)),
+            '>' => Some(Self::Right(1)),
+            '+' => Some(Self::Add(1)),
+            '-' => Some(Self::Sub(1)),
+            ',' => Some(Self::Input(1)),
+            '.' => Some(Self::Output(1)),
+            '[' => Some(Self::Open(1)),
+            ']' => Some(Self::Close(1)),
+            _ => None,
         }
     }
 }
 
-impl convert::TryFrom<&char> for Expression {
-    type Error = ();
-
-    fn try_from(c: &char) -> Result<Self, Self::Error> {
-        Self::try_from(c.clone())
+impl SomeFrom<&char> for IRInstruction {
+    fn some_from(c: &char) -> Option<Self> {
+        Self::some_from(c.clone())
     }
 }
 
-impl convert::TryFrom<u8> for Expression {
-    type Error = ();
-
-    fn try_from(b: u8) -> Result<Self, Self::Error> {
-        Self::try_from(b as char)
+impl SomeFrom<u8> for IRInstruction {
+    fn some_from(b: u8) -> Option<Self> {
+        Self::some_from(b as char)
     }
 }
 
-impl convert::TryFrom<&u8> for Expression {
-    type Error = ();
-
-    fn try_from(b: &u8) -> Result<Self, Self::Error> {
-        Self::try_from(b.clone())
+impl SomeFrom<&u8> for IRInstruction {
+    fn some_from(b: &u8) -> Option<Self> {
+        Self::some_from(b.clone())
     }
 }

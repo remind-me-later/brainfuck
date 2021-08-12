@@ -1,31 +1,36 @@
-use crate::expression::Expression;
-use crate::string_utils::{CharPosition, CharPositionEnumerate};
-use crate::virtual_machine::{VMRegisters, VMRunnable};
 use std::convert::TryFrom;
 use std::fmt;
+use std::iter;
 use std::str;
+
 use thiserror::Error;
 
+use crate::ir_instruction::IRInstruction;
+use crate::parser_error::ParserError;
+use crate::parser_warning::ParserWarning;
+use crate::some_from::SomeFrom;
+use crate::string_utils::{CharPosition, CharPositionEnumerate};
+
 #[derive(Debug)]
-pub struct ExpressionWithContext {
-    expression: Expression,
+struct IRInstructionWithContext {
+    expression: IRInstruction,
     beginning: CharPosition,
     end: CharPosition,
 }
 
 #[derive(Error, Debug)]
-pub enum ExpressionWithContextFromIterError {
+enum IRInstructionWithContextFromIterError {
     #[error("not a brainfuck expression")]
-    NotAnExpression,
+    NotAnIRInstruction,
     #[error("the expression beginning at {} and ending at {} 
             evaluates to the null operation", .0.beginning, .0.end)]
-    DegenerateExpression(ExpressionWithContext),
+    DegenerateIRInstruction(IRInstructionWithContext),
     #[error("consumed all of the iterator")]
     EndOfIterator,
 }
 
-impl ExpressionWithContext {
-    fn new(expression: Expression, beginning: CharPosition, end: CharPosition) -> Self {
+impl IRInstructionWithContext {
+    fn new(expression: IRInstruction, beginning: CharPosition, end: CharPosition) -> Self {
         Self {
             expression: expression,
             beginning: beginning,
@@ -34,65 +39,130 @@ impl ExpressionWithContext {
     }
 }
 
-impl<I> TryFrom<&mut std::iter::Peekable<I>> for ExpressionWithContext
+impl<I> TryFrom<&mut iter::Peekable<I>> for IRInstructionWithContext
 where
-    I: std::iter::Iterator<Item = (CharPosition, char)>,
+    I: iter::Iterator<Item = (CharPosition, char)>,
 {
-    type Error = ExpressionWithContextFromIterError;
+    type Error = IRInstructionWithContextFromIterError;
 
-    fn try_from(iter: &mut std::iter::Peekable<I>) -> Result<Self, Self::Error> {
+    fn try_from(iter: &mut iter::Peekable<I>) -> Result<Self, Self::Error> {
         let (beginning, first_character) = iter.next().ok_or(Self::Error::EndOfIterator)?;
 
         let mut expression =
-            Expression::try_from(first_character).map_err(|_| Self::Error::NotAnExpression)?;
+            IRInstruction::some_from(first_character).ok_or(Self::Error::NotAnIRInstruction)?;
         let mut end = beginning.clone();
 
-        while let Some((_, character)) = iter.peek() {
-            if let Some(next_expression) = Expression::try_from(character)
-                .map(|e| expression.combine(&e))
-                .ok()
-                .flatten()
-            {
-                if next_expression.is_degenerate() {
-                    return Err(Self::Error::DegenerateExpression(Self::new(
-                        next_expression,
-                        beginning,
-                        end,
-                    )));
-                }
+        while let Some(next_expression) = iter
+            .peek()
+            .map(|(_, c)| IRInstruction::some_from(c))
+            .flatten()
+            .map(|e| expression.combine(&e))
+            .flatten()
+        {
+            end = iter.next().unwrap().0;
 
-                expression = next_expression;
-            } else {
-                return Ok(Self::new(expression, beginning, end));
+            if next_expression.is_degenerate() {
+                return Err(Self::Error::DegenerateIRInstruction(Self::new(
+                    next_expression,
+                    beginning,
+                    end,
+                )));
             }
 
-            end = iter.next().unwrap().0;
+            expression = next_expression;
         }
 
         return Ok(Self::new(expression, beginning, end));
     }
 }
 
-pub struct Expressions {
-    expressions_raw: Vec<Expression>,
+pub struct Parser {
+    expressions_raw: Vec<IRInstruction>,
+    warnings: Vec<ParserWarning>,
 }
 
-impl fmt::Debug for Expressions {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+impl Default for Parser {
+    fn default() -> Self {
+        Self {
+            expressions_raw: Vec::with_capacity(100),
+            warnings: Vec::with_capacity(10),
+        }
+    }
+}
+impl Parser {
+    pub fn parse(&mut self, string: &str) -> Result<(), ParserError> {
+        let mut brackets = Vec::with_capacity(20);
+        let mut positions = CharPositionEnumerate::from(string).peekable();
+
+        loop {
+            match IRInstructionWithContext::try_from(&mut positions) {
+                Ok(expression_with_context) => {
+                    let mut expression = expression_with_context.expression;
+                    let position = expression_with_context.beginning;
+
+                    if expression.is_open() {
+                        brackets.push(JumpAndCharPosition::new(
+                            self.expressions_raw.len(),
+                            position,
+                        ));
+                    } else if expression.is_close() {
+                        let open = brackets
+                            .pop()
+                            .ok_or_else(|| ParserError::MismatchedClose(position))?
+                            .jump_to;
+
+                        let close = self.expressions_raw.len();
+
+                        self.expressions_raw[open].modify_argument(|_| close);
+                        expression.modify_argument(|_| open);
+                    } else if expression.is_left() || expression.is_right() {
+                        expression.modify_argument(|a| a % 30_000);
+                    } else if expression.is_add() || expression.is_sub() {
+                        expression.modify_argument(|a| a % 256);
+                    }
+
+                    self.expressions_raw.push(expression);
+                }
+
+                Err(e) => match e {
+                    IRInstructionWithContextFromIterError::NotAnIRInstruction => {}
+                    IRInstructionWithContextFromIterError::DegenerateIRInstruction(e) => {
+                        self.warnings
+                            .push(ParserWarning::UselessExpression(e.beginning, e.end));
+                    }
+                    IRInstructionWithContextFromIterError::EndOfIterator => break,
+                },
+            }
+        }
+
+        if let Some(mismatched) = brackets.pop() {
+            Err(ParserError::MismatchedOpen(mismatched.position))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn warnings(&self) -> &Vec<ParserWarning> {
+        &self.warnings
+    }
+}
+
+impl fmt::Debug for Parser {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut result = String::new();
 
         for expression in &self.expressions_raw {
             result = format!("{}{:?}\n", result, expression)
         }
 
-        write!(formatter, "{}", result)
+        write!(f, "{}", result)
     }
 }
 
-impl fmt::Display for Expressions {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Display for Parser {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
-            formatter,
+            f,
             "{}",
             self.expressions_raw
                 .iter()
@@ -101,7 +171,7 @@ impl fmt::Display for Expressions {
     }
 }
 
-pub struct JumpAndCharPosition {
+struct JumpAndCharPosition {
     jump_to: usize,
     position: CharPosition,
 }
@@ -115,127 +185,3 @@ impl JumpAndCharPosition {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum ExpressionsParseError {
-    #[error("unbalanced \"[\" at {}", .0)]
-    MismatchedOpen(CharPosition),
-    #[error("unbalanced \"]\" at {}", .0)]
-    MismatchedClose(CharPosition),
-}
-
-impl str::FromStr for Expressions {
-    type Err = ExpressionsParseError;
-
-    fn from_str(string: &str) -> Result<Self, Self::Err> {
-        let mut expressions_raw: Vec<Expression> = Vec::with_capacity(100);
-        let mut brackets = Vec::with_capacity(20);
-        let mut positions = CharPositionEnumerate::from(string).peekable();
-
-        loop {
-            match ExpressionWithContext::try_from(&mut positions) {
-                Ok(expression_with_context) => {
-                    let mut expression = expression_with_context.expression;
-                    let position = expression_with_context.beginning;
-
-                    if expression.is_open() {
-                        brackets.push(JumpAndCharPosition::new(expressions_raw.len(), position));
-                    } else if expression.is_close() {
-                        let open = brackets
-                            .pop()
-                            .ok_or_else(|| Self::Err::MismatchedClose(position))?
-                            .jump_to;
-
-                        let close = expressions_raw.len();
-
-                        expressions_raw[open].modify_argument(|_| close);
-                        expression.modify_argument(|_| open);
-                    } else if expression.is_left() || expression.is_right() {
-                        expression.modify_argument(|a| a % 30_000);
-                    } else if expression.is_add() || expression.is_sub() {
-                        expression.modify_argument(|a| a % 256);
-                    }
-
-                    expressions_raw.push(expression);
-                }
-
-                Err(e) => match e {
-                    ExpressionWithContextFromIterError::NotAnExpression => {}
-                    ExpressionWithContextFromIterError::DegenerateExpression(_) => {
-                        panic!();
-                    }
-                    ExpressionWithContextFromIterError::EndOfIterator => break,
-                },
-            }
-        }
-
-        if let Some(mismatched) = brackets.pop() {
-            Err(Self::Err::MismatchedOpen(mismatched.position))
-        } else {
-            Ok(Expressions {
-                expressions_raw: expressions_raw,
-            })
-        }
-    }
-}
-
-impl VMRunnable for Expressions {
-    fn run<R, W>(&self, registers: &mut VMRegisters, writer: &mut W, reader: &mut R)
-    where
-        R: std::io::Read,
-        W: std::io::Write,
-    {
-        let len = self.expressions_raw.len();
-
-        while registers.pc() < len {
-            match self.expressions_raw[registers.pc()] {
-                Expression::Left(a) => {
-                    if a > registers.head() {
-                        registers.head_to(30_000 - (a - registers.head()))
-                    } else {
-                        registers.head_to(registers.head() - a)
-                    }
-                }
-
-                Expression::Right(a) => registers.head_to((registers.head() + a) % 30_000),
-
-                Expression::Add(a) => {
-                    *registers.cell_mut() = registers.cell().wrapping_add(a as u8)
-                }
-
-                Expression::Sub(a) => {
-                    *registers.cell_mut() = registers.cell().wrapping_sub(a as u8)
-                }
-
-                Expression::Input(times) => {
-                    for _ in 0..times {
-                        let mut buffer = [0; 1];
-                        reader.read_exact(&mut buffer).unwrap();
-                        *registers.cell_mut() = buffer[0];
-                    }
-                }
-
-                Expression::Output(times) => {
-                    for _ in 0..times {
-                        let mut buffer = [0; 1];
-                        buffer[0] = registers.cell();
-                        writer.write(&mut buffer).unwrap();
-                    }
-                }
-
-                Expression::Open(close) => {
-                    if registers.cell() == 0 {
-                        registers.jump_to(close as usize - 1);
-                    }
-                }
-
-                Expression::Close(open) => {
-                    if registers.cell() != 0 {
-                        registers.jump_to(open as usize);
-                    }
-                }
-            }
-
-            registers.increase_pc();
-        }
-    }
-}

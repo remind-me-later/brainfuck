@@ -1,4 +1,4 @@
-use brainfuck::parser::Expressions;
+use brainfuck::parser::Parser;
 use brainfuck::virtual_machine::VM;
 use clap::{App, Arg};
 use colored::*;
@@ -20,9 +20,15 @@ fn main() {
 
     let contents = fs::read_to_string(matches.value_of("INPUT").exit_no_file()).exit_bad_file();
 
-    //println!("{:?}", contents.parse::<Expressions>().exit_bad_program());
-    VM::new(&contents.parse::<Expressions>().exit_bad_program())
-        .run(&mut io::stdout(), &mut io::stdin());
+    let mut parser = Parser::default();
+
+    parser.parse(&contents).exit_bad_program();
+
+    for warning in parser.warnings() {
+        println!("{} {}", "warning:".yellow().bold(), warning);
+    }
+
+    VM::new(&parser).run(&mut io::stdout(), &mut io::stdin());
 
     process::exit(exitcode::OK);
 }
