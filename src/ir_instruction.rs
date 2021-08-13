@@ -1,7 +1,7 @@
+use std::convert;
 use std::fmt;
 
-use crate::some_from::SomeFrom;
-
+#[derive(Clone)]
 pub enum IRInstruction {
     NOP,
     Left(usize),
@@ -189,36 +189,44 @@ impl fmt::Display for IRInstruction {
     }
 }
 
-impl SomeFrom<char> for IRInstruction {
-    fn some_from(c: char) -> Option<Self> {
+impl convert::TryFrom<char> for IRInstruction {
+    type Error = ();
+
+    fn try_from(c: char) -> Result<Self, Self::Error> {
         match c {
-            '<' => Some(Self::Left(1)),
-            '>' => Some(Self::Right(1)),
-            '+' => Some(Self::Add(1)),
-            '-' => Some(Self::Sub(1)),
-            ',' => Some(Self::Input(1)),
-            '.' => Some(Self::Output(1)),
-            '[' => Some(Self::Open(1)),
-            ']' => Some(Self::Close(1)),
-            _ => None,
+            '<' => Ok(Self::Left(1)),
+            '>' => Ok(Self::Right(1)),
+            '+' => Ok(Self::Add(1)),
+            '-' => Ok(Self::Sub(1)),
+            ',' => Ok(Self::Input(1)),
+            '.' => Ok(Self::Output(1)),
+            '[' => Ok(Self::Open(1)),
+            ']' => Ok(Self::Close(1)),
+            _ => Err(()),
         }
     }
 }
 
-impl SomeFrom<&char> for IRInstruction {
-    fn some_from(c: &char) -> Option<Self> {
-        Self::some_from(*c)
+impl convert::TryFrom<&char> for IRInstruction {
+    type Error = ();
+
+    fn try_from(c: &char) -> Result<Self, Self::Error> {
+        Self::try_from(*c)
     }
 }
 
-impl SomeFrom<u8> for IRInstruction {
-    fn some_from(b: u8) -> Option<Self> {
-        Self::some_from(b as char)
+impl convert::TryFrom<u8> for IRInstruction {
+    type Error = ();
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        Self::try_from(b as char)
     }
 }
 
-impl SomeFrom<&u8> for IRInstruction {
-    fn some_from(b: &u8) -> Option<Self> {
-        Self::some_from(*b)
+impl convert::TryFrom<&u8> for IRInstruction {
+    type Error = ();
+
+    fn try_from(b: &u8) -> Result<Self, Self::Error> {
+        Self::try_from(*b)
     }
 }

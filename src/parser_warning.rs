@@ -27,7 +27,7 @@ impl ParserWarning {
 impl fmt::Display for ParserWarning {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::NOP(_, _, _) => write!(f, "no operation",),
+            Self::NOP(_, _, ir_instruction) => write!(f, "no operation: \"{}\"", ir_instruction),
         }
     }
 }
