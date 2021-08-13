@@ -45,6 +45,8 @@ fn main() {
         );
     }
 
+    println!("{}", parser.ir());
+
     //VM::new(parser.ir_program()).run(&mut io::stdout(), &mut io::stdin());
 
     process::exit(exitcode::OK);

@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::ir_instruction::IRInstruction;
+use crate::ir::{Instruction, IR};
 
 const TAPE_LENGTH: usize = 30_000;
 
@@ -8,7 +8,7 @@ pub struct VM<'a> {
     pc: usize,
     head: usize,
     tape: [u8; TAPE_LENGTH],
-    program: &'a Vec<IRInstruction>,
+    ir: &'a IR,
 }
 
 impl<'a> VM<'a> {
@@ -33,15 +33,15 @@ impl<'a> VM<'a> {
     }
 
     pub fn done(&self) -> bool {
-        self.pc >= self.program.len()
+        self.pc >= self.ir.len()
     }
 
-    pub fn new(program: &'a Vec<IRInstruction>) -> Self {
+    pub fn new(ir: &'a IR) -> Self {
         Self {
             pc: 0,
             head: 0,
             tape: [0; TAPE_LENGTH],
-            program: program,
+            ir: ir,
         }
     }
 
@@ -51,10 +51,10 @@ impl<'a> VM<'a> {
         W: io::Write,
     {
         while !self.done() {
-            match self.program[self.pc] {
-                IRInstruction::NOP => (),
+            match self.ir[self.pc] {
+                Instruction::NOP => (),
 
-                IRInstruction::Left(a) => {
+                Instruction::Left(a) => {
                     if a > self.head {
                         self.head_to(30_000 - (a - self.head))
                     } else {
@@ -62,13 +62,13 @@ impl<'a> VM<'a> {
                     }
                 }
 
-                IRInstruction::Right(a) => self.head_to((self.head + a) % 30_000),
+                Instruction::Right(a) => self.head_to((self.head + a) % 30_000),
 
-                IRInstruction::Add(a) => *self.cell_mut() = self.cell().wrapping_add(a as u8),
+                Instruction::Add(a) => *self.cell_mut() = self.cell().wrapping_add(a as u8),
 
-                IRInstruction::Sub(a) => *self.cell_mut() = self.cell().wrapping_sub(a as u8),
+                Instruction::Sub(a) => *self.cell_mut() = self.cell().wrapping_sub(a as u8),
 
-                IRInstruction::Input(times) => {
+                Instruction::Input(times) => {
                     for _ in 0..times {
                         writer.flush().unwrap();
                         let mut buffer = [0; 1];
@@ -77,7 +77,7 @@ impl<'a> VM<'a> {
                     }
                 }
 
-                IRInstruction::Output(times) => {
+                Instruction::Output(times) => {
                     for _ in 0..times {
                         let mut buffer = [0; 1];
                         buffer[0] = self.cell();
@@ -85,13 +85,13 @@ impl<'a> VM<'a> {
                     }
                 }
 
-                IRInstruction::Open(close) => {
+                Instruction::Open(close) => {
                     if self.cell() == 0 {
                         self.jump_to(close as usize - 1);
                     }
                 }
 
-                IRInstruction::Close(open) => {
+                Instruction::Close(open) => {
                     if self.cell() != 0 {
                         self.jump_to(open as usize);
                     }

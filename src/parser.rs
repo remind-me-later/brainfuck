@@ -3,20 +3,18 @@ use std::fmt;
 use std::iter;
 use std::str;
 
-use itertools::Itertools;
-
-use crate::ir_instruction::IRInstruction;
+use crate::ir::{Instruction, IR};
 use crate::parser_error::ParserError;
 use crate::parser_warning::ParserWarning;
 
-struct IRInstructionWithIndex {
-    instruction: IRInstruction,
+struct InstructionWithIndex {
+    instruction: Instruction,
     beginning: usize,
     end: usize,
 }
 
-impl IRInstructionWithIndex {
-    fn new(instruction: IRInstruction, beginning: usize, end: usize) -> Self {
+impl InstructionWithIndex {
+    fn new(instruction: Instruction, beginning: usize, end: usize) -> Self {
         Self {
             instruction: instruction,
             beginning: beginning,
@@ -25,7 +23,7 @@ impl IRInstructionWithIndex {
     }
 }
 
-impl<I> TryFrom<&mut iter::Peekable<I>> for IRInstructionWithIndex
+impl<I> TryFrom<&mut iter::Peekable<I>> for InstructionWithIndex
 where
     I: iter::Iterator<Item = (usize, char)>,
 {
@@ -33,12 +31,12 @@ where
 
     fn try_from(iter: &mut iter::Peekable<I>) -> Result<Self, Self::Error> {
         while let Some((beginning, c)) = iter.next() {
-            if let Ok(mut instruction) = IRInstruction::try_from(c) {
+            if let Ok(mut instruction) = Instruction::try_from(c) {
                 let mut end = beginning.clone();
 
                 while let Some(next_instruction) = iter
                     .peek()
-                    .map(|(_, c)| IRInstruction::try_from(c).ok())
+                    .map(|(_, c)| Instruction::try_from(c).ok())
                     .flatten()
                     .map(|e| instruction.combine(&e))
                     .flatten()
@@ -56,14 +54,14 @@ where
 }
 
 pub struct Parser {
-    program: Vec<IRInstruction>,
+    ir: IR,
     warnings: Vec<ParserWarning>,
 }
 
 impl Default for Parser {
     fn default() -> Self {
         Self {
-            program: Vec::with_capacity(100),
+            ir: IR::default(),
             warnings: Vec::with_capacity(10),
         }
     }
@@ -74,7 +72,7 @@ impl Parser {
         let mut brackets = Vec::with_capacity(20);
         let mut indices = string.char_indices().peekable();
 
-        while let Ok(instruction_with_context) = IRInstructionWithIndex::try_from(&mut indices) {
+        while let Ok(instruction_with_context) = InstructionWithIndex::try_from(&mut indices) {
             let mut instruction = instruction_with_context.instruction;
             let beginning = instruction_with_context.beginning;
             let end = instruction_with_context.end;
@@ -82,7 +80,7 @@ impl Parser {
             if instruction.is_open() {
                 brackets.push(JumpIndex::new(
                     instruction.clone(),
-                    self.program.len(),
+                    self.ir.len(),
                     beginning,
                 ));
             } else if instruction.is_close() {
@@ -93,9 +91,9 @@ impl Parser {
                     })?
                     .jump_index;
 
-                let close = self.program.len();
+                let close = self.ir.len();
 
-                self.program[open].modify_argument(|_| close);
+                self.ir[open].modify_argument(|_| close);
                 instruction.modify_argument(|_| open);
             } else if instruction.is_left() || instruction.is_right() {
                 instruction.modify_argument(|a| a % 30_000);
@@ -109,7 +107,7 @@ impl Parser {
                 ));
             }
 
-            self.program.push(instruction);
+            self.ir.push(instruction);
         }
 
         if let Some(mismatched) = brackets.pop() {
@@ -126,35 +124,31 @@ impl Parser {
         &self.warnings
     }
 
-    pub fn ir_program(&self) -> &Vec<IRInstruction> {
-        &self.program
+    pub fn ir(&self) -> &IR {
+        &self.ir
     }
 }
 
 impl fmt::Debug for Parser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.program.iter().map(|i| format!("{:?}", i)).join("\n")
-        )
+        write!(f, "{:?}", self.ir)
     }
 }
 
 impl fmt::Display for Parser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.program.iter().join(""))
+        write!(f, "{}", self.ir)
     }
 }
 
 struct JumpIndex {
-    instruction: IRInstruction,
+    instruction: Instruction,
     jump_index: usize,
     index: usize,
 }
 
 impl JumpIndex {
-    pub fn new(instruction: IRInstruction, jump_index: usize, index: usize) -> Self {
+    pub fn new(instruction: Instruction, jump_index: usize, index: usize) -> Self {
         Self {
             instruction: instruction,
             jump_index: jump_index,

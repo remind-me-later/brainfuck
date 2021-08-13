@@ -1,8 +1,11 @@
 use std::convert;
 use std::fmt;
+use std::ops;
+
+use itertools::Itertools;
 
 #[derive(Clone)]
-pub enum IRInstruction {
+pub enum Instruction {
     NOP,
     Left(usize),
     Right(usize),
@@ -14,7 +17,7 @@ pub enum IRInstruction {
     Close(usize),
 }
 
-impl IRInstruction {
+impl Instruction {
     pub fn modify_argument<F>(&mut self, f: F)
     where
         F: FnOnce(usize) -> usize,
@@ -157,7 +160,7 @@ impl IRInstruction {
     }
 }
 
-impl fmt::Debug for IRInstruction {
+impl fmt::Debug for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::NOP => write!(f, "NOP"),
@@ -173,23 +176,23 @@ impl fmt::Debug for IRInstruction {
     }
 }
 
-impl fmt::Display for IRInstruction {
+impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::NOP => write!(f, " "),
-            Self::Left(a) => write!(f, "{}", "<".repeat(*a)),
-            Self::Right(a) => write!(f, "{}", ">".repeat(*a)),
-            Self::Add(a) => write!(f, "{}", "+".repeat(*a)),
-            Self::Sub(a) => write!(f, "{}", "-".repeat(*a)),
-            Self::Input(a) => write!(f, "{}", ",".repeat(*a)),
-            Self::Output(a) => write!(f, "{}", ",".repeat(*a)),
+            Self::Left(a) => write!(f, "{}{}", "<", a),
+            Self::Right(a) => write!(f, "{}{}", ">", a),
+            Self::Add(a) => write!(f, "{}{}", "+", a),
+            Self::Sub(a) => write!(f, "{}{}", "-", a),
+            Self::Input(a) => write!(f, "{}{}", ",", a),
+            Self::Output(a) => write!(f, "{}{}", ",", a),
             Self::Open(_) => write!(f, "["),
             Self::Close(_) => write!(f, "]"),
         }
     }
 }
 
-impl convert::TryFrom<char> for IRInstruction {
+impl convert::TryFrom<char> for Instruction {
     type Error = ();
 
     fn try_from(c: char) -> Result<Self, Self::Error> {
@@ -207,7 +210,7 @@ impl convert::TryFrom<char> for IRInstruction {
     }
 }
 
-impl convert::TryFrom<&char> for IRInstruction {
+impl convert::TryFrom<&char> for Instruction {
     type Error = ();
 
     fn try_from(c: &char) -> Result<Self, Self::Error> {
@@ -215,7 +218,7 @@ impl convert::TryFrom<&char> for IRInstruction {
     }
 }
 
-impl convert::TryFrom<u8> for IRInstruction {
+impl convert::TryFrom<u8> for Instruction {
     type Error = ();
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
@@ -223,10 +226,62 @@ impl convert::TryFrom<u8> for IRInstruction {
     }
 }
 
-impl convert::TryFrom<&u8> for IRInstruction {
+impl convert::TryFrom<&u8> for Instruction {
     type Error = ();
 
     fn try_from(b: &u8) -> Result<Self, Self::Error> {
         Self::try_from(*b)
+    }
+}
+
+pub struct IR {
+    ir: Vec<Instruction>,
+}
+
+impl Default for IR {
+    fn default() -> Self {
+        Self {
+            ir: Vec::with_capacity(100),
+        }
+    }
+}
+
+impl ops::Index<usize> for IR {
+    type Output = Instruction;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.ir[index]
+    }
+}
+
+impl ops::IndexMut<usize> for IR {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.ir[index]
+    }
+}
+
+impl fmt::Debug for IR {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.ir.iter().map(|i| format!("{:?}", i)).join("\n")
+        )
+    }
+}
+
+impl fmt::Display for IR {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.ir.iter().join(""))
+    }
+}
+
+impl IR {
+    pub fn len(&self) -> usize {
+        self.ir.len()
+    }
+
+    pub fn push(&mut self, value: Instruction) {
+        self.ir.push(value)
     }
 }
