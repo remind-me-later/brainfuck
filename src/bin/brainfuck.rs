@@ -31,7 +31,7 @@ fn main() {
     parser.parse(&text).exit_parser(file_name, &text, &lookup);
 
     for warning in parser.warnings() {
-        println!(
+        eprintln!(
             "{} {}",
             "warning:".yellow().bold(),
             warning.to_string().bold()
@@ -45,9 +45,9 @@ fn main() {
         );
     }
 
-    println!("{}", parser.ir());
+    //println!("{}", parser.ir());
 
-    //VM::new(parser.ir_program()).run(&mut io::stdout(), &mut io::stdin());
+    VM::new(parser.ir()).run(&mut io::stdout(), &mut io::stdin());
 
     process::exit(exitcode::OK);
 }
@@ -61,7 +61,7 @@ impl<T> OptionError<T> for Option<T> {
         match self {
             Some(val) => val,
             None => {
-                println!("{} {}", "fatal error:".red().bold(), "no input file".bold());
+                eprintln!("{} {}", "fatal error:".red().bold(), "no input file".bold());
                 process::exit(exitcode::NOINPUT);
             }
         }
@@ -101,7 +101,7 @@ impl ExitParserError for ParserResult {
         match self {
             Ok(_) => (),
             Err(error) => {
-                println!(
+                eprintln!(
                     "{} {}",
                     "fatal error:".red().bold(),
                     error.to_string().bold(),
@@ -133,21 +133,21 @@ fn print_warning_line(
     let line_str = text.lines().nth(line_b - 1).unwrap();
     let line_b_spaces = " ".repeat(line_b.to_string().len());
 
-    println!(
+    eprintln!(
         " {} {}:{}:{}",
         "-->".blue().bold(),
         file_name,
         line_b,
         column_b
     );
-    println!(" {} {}", line_b_spaces, "|".blue().bold(),);
-    println!(
+    eprintln!(" {} {}", line_b_spaces, "|".blue().bold(),);
+    eprintln!(
         " {} {} {}",
         line_b.to_string().blue().bold(), // line number
         "|".blue().bold(),
         line_str
     );
-    println!(
+    eprintln!(
         " {} {} {}{}",
         line_b_spaces,
         "|".blue().bold(),

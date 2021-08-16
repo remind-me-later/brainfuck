@@ -15,6 +15,7 @@ pub enum Instruction {
     Output(usize),
     Open(usize),
     Close(usize),
+    Zero,
 }
 
 impl Instruction {
@@ -23,7 +24,7 @@ impl Instruction {
         F: FnOnce(usize) -> usize,
     {
         match self {
-            Self::NOP => (),
+            Self::NOP | Self::Zero => (),
             Self::Left(a)
             | Self::Right(a)
             | Self::Add(a)
@@ -71,6 +72,7 @@ impl Instruction {
 
             (Self::Input(a), Self::Input(b)) => Self::Input(a + b),
             (Self::Output(a), Self::Output(b)) => Self::Output(a + b),
+            (Self::Zero, Self::Zero) => Self::Zero,
             _ => return None,
         };
 
@@ -81,24 +83,9 @@ impl Instruction {
         })
     }
 
-    #[allow(dead_code)]
-    pub fn variant_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Left(_), Self::Left(_)) => true,
-            (Self::Right(_), Self::Right(_)) => true,
-            (Self::Add(_), Self::Add(_)) => true,
-            (Self::Sub(_), Self::Sub(_)) => true,
-            (Self::Input(_), Self::Input(_)) => true,
-            (Self::Output(_), Self::Output(_)) => true,
-            (Self::Open(_), Self::Open(_)) => true,
-            (Self::Close(_), Self::Close(_)) => true,
-            _ => false,
-        }
-    }
-
     pub fn argument(&self) -> usize {
         match self {
-            Self::NOP => 0,
+            Self::NOP | Self::Zero => 0,
             Self::Left(a)
             | Self::Right(a)
             | Self::Add(a)
@@ -158,6 +145,13 @@ impl Instruction {
             _ => false,
         }
     }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Zero => true,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Debug for Instruction {
@@ -172,6 +166,7 @@ impl fmt::Debug for Instruction {
             Self::Output(a) => write!(f, "Output({})", a),
             Self::Open(a) => write!(f, "Open({})", a),
             Self::Close(a) => write!(f, "Close({})", a),
+            Self::Zero => write!(f, "Zero"),
         }
     }
 }
@@ -188,6 +183,7 @@ impl fmt::Display for Instruction {
             Self::Output(a) => write!(f, "{}{}", ",", a),
             Self::Open(_) => write!(f, "["),
             Self::Close(_) => write!(f, "]"),
+            Self::Zero => write!(f, "!"),
         }
     }
 }
@@ -231,6 +227,21 @@ impl convert::TryFrom<&u8> for Instruction {
 
     fn try_from(b: &u8) -> Result<Self, Self::Error> {
         Self::try_from(*b)
+    }
+}
+
+impl convert::TryFrom<&[Instruction]> for Instruction {
+    type Error = ();
+
+    fn try_from(s: &[Instruction]) -> Result<Self, Self::Error> {
+        if s.len() == 1 {
+            // zero
+            if s[0].is_sub() && s[0].argument() == 1 {
+                return Ok(Instruction::Zero);
+            }
+        }
+
+        Err(())
     }
 }
 
@@ -283,5 +294,13 @@ impl IR {
 
     pub fn push(&mut self, value: Instruction) {
         self.ir.push(value)
+    }
+
+    pub fn vec(&self) -> &Vec<Instruction> {
+        &self.ir
+    }
+
+    pub fn mut_vec(&mut self) -> &mut Vec<Instruction> {
+        &mut self.ir
     }
 }

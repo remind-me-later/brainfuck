@@ -96,6 +96,8 @@ impl<'a> VM<'a> {
                         self.jump_to(open as usize);
                     }
                 }
+
+                Instruction::Zero => *self.cell_mut() = 0,
             }
 
             self.increase_pc();

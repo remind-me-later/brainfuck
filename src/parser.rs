@@ -76,11 +76,12 @@ impl Parser {
             let mut instruction = instruction_with_context.instruction;
             let beginning = instruction_with_context.beginning;
             let end = instruction_with_context.end;
+            let instruction_index = self.ir.len();
 
             if instruction.is_open() {
                 brackets.push(JumpIndex::new(
                     instruction.clone(),
-                    self.ir.len(),
+                    instruction_index,
                     beginning,
                 ));
             } else if instruction.is_close() {
@@ -91,10 +92,14 @@ impl Parser {
                     })?
                     .jump_index;
 
-                let close = self.ir.len();
-
-                self.ir[open].modify_argument(|_| close);
-                instruction.modify_argument(|_| open);
+                if let Ok(meta_instruction) = Instruction::try_from(&self.ir.vec()[open + 1..]) {
+                    self.ir.mut_vec().drain(open..);
+                    instruction = meta_instruction;
+                } else {
+                    // normal loop
+                    self.ir[open].modify_argument(|_| instruction_index);
+                    instruction.modify_argument(|_| open);
+                }
             } else if instruction.is_left() || instruction.is_right() {
                 instruction.modify_argument(|a| a % 30_000);
             } else if instruction.is_add() || instruction.is_sub() {
