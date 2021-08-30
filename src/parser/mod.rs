@@ -1,11 +1,12 @@
+mod fatal;
+mod warning;
+
+use crate::ir::{Instruction, IR};
+use fatal::Fatal;
 use std::convert::TryFrom;
 use std::fmt;
 use std::iter;
 use std::str;
-
-use crate::ir::{Instruction, IR};
-use crate::parser_error::ParserError;
-use crate::parser_warning::ParserWarning;
 
 struct InstructionWithIndex {
     instruction: Instruction,
@@ -55,7 +56,7 @@ where
 
 pub struct Parser {
     ir: IR,
-    warnings: Vec<ParserWarning>,
+    warnings: Vec<warning::Warning>,
 }
 
 impl Default for Parser {
@@ -67,8 +68,10 @@ impl Default for Parser {
     }
 }
 
+pub type ParseResult = Result<(), Fatal>;
+
 impl Parser {
-    pub fn parse(&mut self, string: &str) -> Result<(), ParserError> {
+    pub fn parse(&mut self, string: &str) -> ParseResult {
         let mut brackets = Vec::with_capacity(20);
         let mut indices = string.char_indices().peekable();
 
@@ -87,9 +90,7 @@ impl Parser {
             } else if instruction.is_close() {
                 let open = brackets
                     .pop()
-                    .ok_or_else(|| {
-                        ParserError::MismatchedBracket(beginning, instruction.to_string())
-                    })?
+                    .ok_or_else(|| Fatal::MismatchedBracket(beginning, instruction.to_string()))?
                     .jump_index;
 
                 if let Ok(meta_instruction) = Instruction::try_from(&self.ir.vec()[open + 1..]) {
@@ -100,12 +101,8 @@ impl Parser {
                     self.ir[open].modify_argument(|_| instruction_index);
                     instruction.modify_argument(|_| open);
                 }
-            } else if instruction.is_left() || instruction.is_right() {
-                instruction.modify_argument(|a| a % 30_000);
-            } else if instruction.is_add() || instruction.is_sub() {
-                instruction.modify_argument(|a| a % 256);
             } else if instruction.is_nop() {
-                self.warnings.push(ParserWarning::NOP(
+                self.warnings.push(warning::Warning::NOP(
                     beginning,
                     end,
                     String::from(&string[beginning..=end]),
@@ -116,7 +113,7 @@ impl Parser {
         }
 
         if let Some(mismatched) = brackets.pop() {
-            Err(ParserError::MismatchedBracket(
+            Err(Fatal::MismatchedBracket(
                 mismatched.index,
                 mismatched.instruction.to_string(),
             ))
@@ -125,7 +122,7 @@ impl Parser {
         }
     }
 
-    pub fn warnings(&self) -> &Vec<ParserWarning> {
+    pub fn warnings(&self) -> &Vec<warning::Warning> {
         &self.warnings
     }
 

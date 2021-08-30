@@ -16,6 +16,10 @@ pub enum Instruction {
     Open(usize),
     Close(usize),
     Zero,
+    FindZeroLeft(usize),
+    FindZeroRight(usize),
+    ZeroAddLeft(usize),
+    ZeroAddRight(usize),
 }
 
 impl Instruction {
@@ -32,7 +36,11 @@ impl Instruction {
             | Self::Input(a)
             | Self::Output(a)
             | Self::Open(a)
-            | Self::Close(a) => *a = f(*a),
+            | Self::Close(a)
+            | Self::FindZeroLeft(a)
+            | Self::FindZeroRight(a)
+            | Self::ZeroAddLeft(a)
+            | Self::ZeroAddRight(a) => *a = f(*a),
         }
     }
 
@@ -93,7 +101,11 @@ impl Instruction {
             | Self::Input(a)
             | Self::Output(a)
             | Self::Open(a)
-            | Self::Close(a) => *a,
+            | Self::Close(a)
+            | Self::FindZeroLeft(a)
+            | Self::FindZeroRight(a)
+            | Self::ZeroAddLeft(a)
+            | Self::ZeroAddRight(a) => *a,
         }
     }
 
@@ -167,6 +179,10 @@ impl fmt::Debug for Instruction {
             Self::Open(a) => write!(f, "Open({})", a),
             Self::Close(a) => write!(f, "Close({})", a),
             Self::Zero => write!(f, "Zero"),
+            Self::FindZeroLeft(a) => write!(f, "FindZeroLeft({})", a),
+            Self::FindZeroRight(a) => write!(f, "FindZeroRight({})", a),
+            Self::ZeroAddLeft(a) => write!(f, "ZeroAddLeft({})", a),
+            Self::ZeroAddRight(a) => write!(f, "ZeroAddRight({})", a),
         }
     }
 }
@@ -180,10 +196,14 @@ impl fmt::Display for Instruction {
             Self::Add(a) => write!(f, "{}{}", "+", a),
             Self::Sub(a) => write!(f, "{}{}", "-", a),
             Self::Input(a) => write!(f, "{}{}", ",", a),
-            Self::Output(a) => write!(f, "{}{}", ",", a),
+            Self::Output(a) => write!(f, "{}{}", ".", a),
             Self::Open(_) => write!(f, "["),
             Self::Close(_) => write!(f, "]"),
             Self::Zero => write!(f, "!"),
+            Self::FindZeroLeft(a) => write!(f, "\\{}", a),
+            Self::FindZeroRight(a) => write!(f, "/{}", a),
+            Self::ZeroAddLeft(a) => write!(f, "w{}", a),
+            Self::ZeroAddRight(a) => write!(f, "m{}", a),
         }
     }
 }
@@ -238,6 +258,40 @@ impl convert::TryFrom<&[Instruction]> for Instruction {
             // zero
             if s[0].is_sub() && s[0].argument() == 1 {
                 return Ok(Instruction::Zero);
+            }
+
+            // Find zero left
+            if s[0].is_left() {
+                return Ok(Instruction::FindZeroLeft(s[0].argument()));
+            }
+
+            // Find zero right
+            if s[0].is_right() {
+                return Ok(Instruction::FindZeroRight(s[0].argument()));
+            }
+        } else if s.len() == 4 {
+            // Zero Add Left
+            if s[0].is_sub()
+                && s[0].argument() == 1
+                && s[1].is_left()
+                && s[2].is_add()
+                && s[2].argument() == 1
+                && s[3].is_right()
+                && s[1].argument() == s[3].argument()
+            {
+                return Ok(Instruction::ZeroAddLeft(s[1].argument()));
+            }
+
+            // Zero Add Right
+            if s[0].is_sub()
+                && s[0].argument() == 1
+                && s[1].is_right()
+                && s[2].is_add()
+                && s[2].argument() == 1
+                && s[3].is_left()
+                && s[1].argument() == s[3].argument()
+            {
+                return Ok(Instruction::ZeroAddRight(s[1].argument()));
             }
         }
 

@@ -54,15 +54,9 @@ impl<'a> VM<'a> {
             match self.ir[self.pc] {
                 Instruction::NOP => (),
 
-                Instruction::Left(a) => {
-                    if a > self.head {
-                        self.head_to(30_000 - (a - self.head))
-                    } else {
-                        self.head_to(self.head - a)
-                    }
-                }
+                Instruction::Left(a) => self.head_to(self.head - a),
 
-                Instruction::Right(a) => self.head_to((self.head + a) % 30_000),
+                Instruction::Right(a) => self.head_to(self.head + a),
 
                 Instruction::Add(a) => *self.cell_mut() = self.cell().wrapping_add(a as u8),
 
@@ -98,6 +92,34 @@ impl<'a> VM<'a> {
                 }
 
                 Instruction::Zero => *self.cell_mut() = 0,
+
+                Instruction::FindZeroLeft(a) => {
+                    while self.cell() != 0 {
+                        self.head_to(self.head - a);
+                    }
+                }
+
+                Instruction::FindZeroRight(a) => {
+                    while self.cell() != 0 {
+                        self.head_to(self.head + a);
+                    }
+                }
+
+                Instruction::ZeroAddLeft(a) => {
+                    if self.cell() != 0 {
+                        self.tape[self.head - a] =
+                            self.tape[self.head - a].wrapping_add(self.cell());
+                        *self.cell_mut() = 0;
+                    }
+                }
+
+                Instruction::ZeroAddRight(a) => {
+                    if self.cell() != 0 {
+                        self.tape[self.head + a] =
+                            self.tape[self.head + a].wrapping_add(self.cell());
+                        *self.cell_mut() = 0;
+                    }
+                }
             }
 
             self.increase_pc();

@@ -1,10 +1,10 @@
 use std::fmt;
 
-pub enum ParserWarning {
+pub enum Warning {
     NOP(usize, usize, String),
 }
 
-impl ParserWarning {
+impl Warning {
     pub fn beginning(&self) -> usize {
         match self {
             Self::NOP(beginning, _, _) => *beginning,
@@ -24,7 +24,7 @@ impl ParserWarning {
     }
 }
 
-impl fmt::Display for ParserWarning {
+impl fmt::Display for Warning {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::NOP(_, _, ir_instruction) => write!(f, "no operation: \"{}\"", ir_instruction),

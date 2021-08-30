@@ -1,17 +1,16 @@
 use thiserror::Error;
 
-pub type ParserResult = Result<(), ParserError>;
-
 #[derive(Error, Debug)]
-pub enum ParserError {
+pub enum Fatal {
     #[error("unbalanced bracket: \"{}\"", .1)]
     MismatchedBracket(usize, String),
 }
 
-impl ParserError {
+impl Fatal {
     pub fn beginning(&self) -> usize {
         match self {
             Self::MismatchedBracket(position, _) => *position,
         }
     }
 }
+

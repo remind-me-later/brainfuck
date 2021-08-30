@@ -1,11 +1,9 @@
+use brainfuck::parser::ParseResult;
 use brainfuck::parser::Parser;
-use brainfuck::parser_error::ParserResult;
 use brainfuck::virtual_machine::VM;
-
 use clap::{App, Arg};
 use colored::*;
 use line_col::LineColLookup;
-
 use std::fs;
 use std::io;
 use std::process;
@@ -45,7 +43,7 @@ fn main() {
         );
     }
 
-    //println!("{}", parser.ir());
+    println!("{}", parser.ir());
 
     VM::new(parser.ir()).run(&mut io::stdout(), &mut io::stdin());
 
@@ -96,7 +94,7 @@ trait ExitParserError {
     fn exit_parser(self, file_name: &str, text: &str, lookup: &LineColLookup);
 }
 
-impl ExitParserError for ParserResult {
+impl ExitParserError for ParseResult {
     fn exit_parser(self, file_name: &str, text: &str, lookup: &LineColLookup) {
         match self {
             Ok(_) => (),
