@@ -10,3 +10,6 @@ exitcode = "1.1"
 colored = "2"
 itertools = "0.10"
 line-col = "0.2"
+
+[profile.test]
+opt-level = 3

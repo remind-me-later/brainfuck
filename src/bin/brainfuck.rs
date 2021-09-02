@@ -43,7 +43,7 @@ fn main() {
         );
     }
 
-    println!("{}", parser.ir());
+    // println!("{}", parser.ir());
 
     VM::new(parser.ir()).run(&mut io::stdout(), &mut io::stdin());
 
@@ -127,7 +127,7 @@ fn print_warning_line(
     lookup: &LineColLookup,
 ) {
     let (line_b, column_b) = lookup.get(beginning);
-    let (line_e, column_e) = lookup.get(end);
+    let (_line_e, column_e) = lookup.get(end);
     let line_str = text.lines().nth(line_b - 1).unwrap();
     let line_b_spaces = " ".repeat(line_b.to_string().len());
 

@@ -1,39 +1,126 @@
-#[test]
-fn simple_hello() {
-    // Super simple hello world program should show any glaring errors
-    let program = "
-[
-  A simple \"Hello, World\" program that prints a newline at the end,
-  only the first cell is manipulated to obtain the desired ASCII values.
+use brainfuck::parser::Parser;
+use brainfuck::virtual_machine::VM;
+use std::io::empty;
 
-  A loop at the beginning of a program will never be executed as the value
-  of the first cell is 0, so you can write a comment using any character you
-  like as long as the '[' and ']' are balanced.
+#[test]
+fn hello() {
+    let program = "
+[ This program prints \"Hello World!\" and a newline to the screen, its
+  length is 106 active command characters. [It is not the shortest.]
+
+  This loop is an \"initial comment loop\", a simple way of adding a comment
+  to a BF program such that you don't have to worry about any command
+  characters. Any \".\", \",\", \"+\", \"-\", \"<\" and \">\" characters are simply
+  ignored, the \"[\" and \"]\" characters just have to be balanced. This
+  loop and the commands it contains are ignored because the current cell
+  defaults to a value of 0; the 0 value causes this loop to be skipped.
+]
+++++++++               Set Cell #0 to 8
+[
+    >++++               Add 4 to Cell #1; this will always set Cell #1 to 4
+    [                   as the cell will be cleared by the loop
+        >++             Add 2 to Cell #2
+        >+++            Add 3 to Cell #3
+        >+++            Add 3 to Cell #4
+        >+              Add 1 to Cell #5
+        <<<<-           Decrement the loop counter in Cell #1
+    ]                   Loop till Cell #1 is zero; number of iterations is 4
+    >+                  Add 1 to Cell #2
+    >+                  Add 1 to Cell #3
+    >-                  Subtract 1 from Cell #4
+    >>+                 Add 1 to Cell #6
+    [<]                 Move back to the first zero cell you find; this will
+                        be Cell #1 which was cleared by the previous loop
+    <-                  Decrement the loop Counter in Cell #0
+]                       Loop till Cell #0 is zero; number of iterations is 8
+
+The result of this is:
+Cell No :   0   1   2   3   4   5   6
+Contents:   0   0  72 104  88  32   8
+Pointer :   ^
+
+>>.                     Cell #2 has value 72 which is 'H'
+>---.                   Subtract 3 from Cell #3 to get 101 which is 'e'
++++++++..+++.           Likewise for 'llo' from Cell #3
+>>.                     Cell #5 is 32 for the space
+<-.                     Subtract 1 from Cell #4 for 87 to give a 'W'
+<.                      Cell #3 was set to 'o' from the end of 'Hello'
++++.------.--------.    Cell #3 for 'rl' and 'd'
+>>+.                    Add 1 to Cell #5 gives us an exclamation point
+>++.                    And finally a newline from Cell #6
+";
+
+    let expected = "Hello World!\n";
+
+    let mut output = Vec::with_capacity(13);
+
+    let mut parser = Parser::default();
+
+    parser.parse(program).unwrap();
+
+    VM::new(parser.ir()).run(&mut output, &mut empty());
+
+    assert_eq!(output, expected.as_bytes());
+}
+
+#[test]
+fn sierpinski() {
+    let program = "
+[sierpinski.b -- display Sierpinski triangle
+(c) 2016 Daniel B. Cristofani
+http://brainfuck.org/]
+
+++++++++[>+>++++<<-]>++>>+<[-[>>+<<-]+>>]>+[
+    -<<<[
+        ->[+[-]+>++>>>-<<]<[<]>>++++++[<<+++++>>-]+<<++.[-]<<
+    ]>.>+[>>]>+
 ]
 
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++.   Add 72 which is ASCII for 'H' to Cell #0 and print it
-+++++++++++++++++++++++++++++.                                              Add 30 to get to the value 101 for 'e'
-+++++++.                                                                    Add 7 for 'l'
-.                                                                           Print for another 'l'
-+++.                                                                        Add 3 for 'o'
--------------------------------------------------------------------.        Subtract until 44 for comma
-------------.                                                               The same to get to 32 for Space
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++.                    Get to 87 for 'W'
-++++++++++++++++++++++++.                                                   111 for 'o'
-+++.                                                                        114 for 'r'
-------.                                                                     108 for 'l'
---------.                                                                   100 for 'd'
--------------------------------------------------------------------.        10  for '!'";
+[Shows an ASCII representation of the Sierpinski triangle
+(iteration 5).]
+";
 
-    let mut output_file = Vec::with_capacity(13);
+    let expected = "                               *
+                              * *
+                             *   *
+                            * * * *
+                           *       *
+                          * *     * *
+                         *   *   *   *
+                        * * * * * * * *
+                       *               *
+                      * *             * *
+                     *   *           *   *
+                    * * * *         * * * *
+                   *       *       *       *
+                  * *     * *     * *     * *
+                 *   *   *   *   *   *   *   *
+                * * * * * * * * * * * * * * * *
+               *                               *
+              * *                             * *
+             *   *                           *   *
+            * * * *                         * * * *
+           *       *                       *       *
+          * *     * *                     * *     * *
+         *   *   *   *                   *   *   *   *
+        * * * * * * * *                 * * * * * * * *
+       *               *               *               *
+      * *             * *             * *             * *
+     *   *           *   *           *   *           *   *
+    * * * *         * * * *         * * * *         * * * *
+   *       *       *       *       *       *       *       *
+  * *     * *     * *     * *     * *     * *     * *     * *
+ *   *   *   *   *   *   *   *   *   *   *   *   *   *   *   *
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+";
 
-    program
-        .parse::<Instructions>()
-        .unwrap()
-        .execute(&mut output_file, &mut std::io::empty());
+    let mut output = Vec::new();
 
-    let mut out = Vec::with_capacity(13);
-    output_file.as_slice().read_to_end(&mut out).unwrap();
+    let mut parser = Parser::default();
 
-    assert_eq!(String::from_utf8(out).unwrap(), "Hello, World!");
+    parser.parse(program).unwrap();
+
+    VM::new(parser.ir()).run(&mut output, &mut empty());
+
+    assert_eq!(output, expected.as_bytes());
 }
